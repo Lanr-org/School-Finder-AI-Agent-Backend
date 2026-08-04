@@ -18,14 +18,16 @@ const parseRedisUrl = (url: string) => {
 export const telegramOutboundWorker = new Worker<OutboundTelegramPayload>(
   'telegram-outbound',
   async (job: Job<OutboundTelegramPayload>) => {
-    const { chatId, text, parseMode } = job.data
+    const { chatId, text, parseMode, replyMarkup } = job.data
     logger.info({ jobId: job.id, chatId }, 'Sending outbound Telegram message.')
 
     const bot = TelegramBotService.getBot()
 
     await bot.api.sendMessage(chatId, text, {
       parse_mode: parseMode || 'MarkdownV2',
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     })
+
   },
   {
     connection: parseRedisUrl(env.redisUrl),
