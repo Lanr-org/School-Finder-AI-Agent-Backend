@@ -50,10 +50,12 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     if (messageDTO.isCallback && messageDTO.callbackData) {
       const handled = await TelegramCallbackQueryHandler.handleCallbackQuery(
         messageDTO.externalChatId,
-        messageDTO.callbackData
+        messageDTO.callbackData,
+        studentContext.studentId
       )
       if (handled) return
     }
+
 
     // 4. Broadcast live event via Centrifugo to admin dashboard
     await CentrifugoClient.publish('admin:dashboard', {

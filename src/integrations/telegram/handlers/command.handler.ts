@@ -1,5 +1,7 @@
+import { InlineKeyboard } from 'grammy'
 import { logger } from '../../../config/logger.js'
 import { TelegramOutboundService } from '../services/telegram-outbound.service.js'
+
 
 export interface ParsedCommand {
   command: string
@@ -51,12 +53,21 @@ export class TelegramCommandHandler {
             chatId,
             `Linking your Telegram account with token: ${token}...`
           )
-        } else {
-          await TelegramOutboundService.sendMessage(
-            chatId,
-            'Welcome to School Finder AI! 🎓\n\nI will help you explore international study opportunities, target programs, and application requirements.'
-          )
+          return true
         }
+
+        const levelKeyboard = new InlineKeyboard()
+          .text('🎓 Masters', 'SELECT_LEVEL:MASTERS')
+          .text('🏛️ Bachelors', 'SELECT_LEVEL:BACHELORS')
+          .row()
+          .text('🔬 PhD / Doctorate', 'SELECT_LEVEL:PHD')
+          .text('📜 Diploma', 'SELECT_LEVEL:DIPLOMA')
+
+        await TelegramOutboundService.sendMessage(
+          chatId,
+          'Welcome to School Finder AI! 🎓\n\nTo help us find the best study opportunities for you, what level of study are you aiming for?',
+          levelKeyboard
+        )
         return true
 
       case 'help':
