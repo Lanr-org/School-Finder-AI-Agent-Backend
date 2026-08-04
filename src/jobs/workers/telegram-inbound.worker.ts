@@ -6,6 +6,7 @@ import { TelegramUserMapper } from '../../integrations/telegram/mappers/telegram
 import { TelegramMessageMapper } from '../../integrations/telegram/mappers/telegram-message.mapper.js'
 import { TelegramCommandHandler } from '../../integrations/telegram/handlers/command.handler.js'
 import { TelegramCallbackQueryHandler } from '../../integrations/telegram/handlers/callback-query.handler.js'
+import { ContactsService } from '../../modules/contacts/contacts.service.js'
 import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
 
 const parseRedisUrl = (url: string) => {
@@ -33,7 +34,10 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       return
     }
 
-    // 1. Handle Bot Commands (e.g. /start, /help)
+    // 1. Resolve or Register Student in PostgreSQL Database
+    const studentContext = await ContactsService.resolveTelegramContact(contactDTO)
+
+    // 2. Handle Bot Commands (e.g. /start, /help)
     if (messageDTO.textContent && messageDTO.textContent.startsWith('/')) {
       const handled = await TelegramCommandHandler.handleCommand(
         messageDTO.externalChatId,
@@ -42,7 +46,7 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       if (handled) return
     }
 
-    // 2. Handle Inline Keyboard Button Clicks (Callback Queries)
+    // 3. Handle Inline Keyboard Button Clicks (Callback Queries)
     if (messageDTO.isCallback && messageDTO.callbackData) {
       const handled = await TelegramCallbackQueryHandler.handleCallbackQuery(
         messageDTO.externalChatId,
@@ -51,14 +55,18 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       if (handled) return
     }
 
-    // 3. Broadcast live event via Centrifugo to admin dashboard for general student messages
+    // 4. Broadcast live event via Centrifugo to admin dashboard
     await CentrifugoClient.publish('admin:dashboard', {
       event: 'message.created',
       data: {
+        publicId: studentContext.publicId,
+        studentId: studentContext.studentId,
+        conversationId: studentContext.conversationId,
         providerUserId: contactDTO.providerUserId,
         firstName: contactDTO.firstName,
         text: messageDTO.textContent || messageDTO.callbackData,
         chatId: messageDTO.externalChatId,
+        isNewStudent: studentContext.isNewStudent,
       },
       timestamp: new Date().toISOString(),
     })
@@ -68,6 +76,7 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     concurrency: 5,
   }
 )
+
 
 
 telegramInboundWorker.on('completed', (job) => {

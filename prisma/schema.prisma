@@ -115,3 +115,122 @@ model Team_Invitations {
   @@index([invited_by_user_id])
   @@map("team_invitations")
 }
+
+// ==========================================
+// ENUMS FOR CONTACTS, STUDENTS & CONVERSATIONS
+// ==========================================
+
+enum ContactProvider {
+  TELEGRAM
+  WHATSAPP
+  LIVE_CHAT
+  FACEBOOK
+  MANUAL
+}
+
+enum StudentStatus {
+  NEW
+  AWAITING_ASSIGNMENT
+  ASSIGNED
+  FOLLOW_UP
+  APPLICATION_STARTED
+  COMPLETED
+  CLOSED
+}
+
+enum ConversationMode {
+  AI_BOT
+  HUMAN_ADVISOR
+  ESCALATED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ESCALATED
+  RESOLVED
+}
+
+enum MessageSenderType {
+  STUDENT
+  AGENT
+  ADVISOR
+  SYSTEM
+}
+
+// ==========================================
+// MODELS FOR CONTACTS, STUDENTS & CONVERSATIONS
+// ==========================================
+
+model Contacts {
+  id               String          @id @default(uuid()) @db.Uuid
+  provider_type    ContactProvider @default(TELEGRAM)
+  provider_user_id String          @db.VarChar(100)
+  first_name       String          @db.VarChar(100)
+  last_name        String?         @db.VarChar(100)
+  username         String?         @db.VarChar(100)
+  email            String?         @db.VarChar(255)
+  phone            String?         @db.VarChar(40)
+  created_at       DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime        @updatedAt @db.Timestamptz(6)
+
+  student Student?
+
+  @@unique([provider_type, provider_user_id])
+  @@index([provider_user_id])
+  @@map("contacts")
+}
+
+model Student {
+  id                  String        @id @default(uuid()) @db.Uuid
+  public_id           String        @unique @db.VarChar(24)
+  contact_id          String        @unique @db.Uuid
+  assigned_advisor_id String?       @db.Uuid
+  status              StudentStatus @default(NEW)
+
+  study_level         String?       @db.VarChar(50)
+  target_destinations String[]
+  target_intake       String?       @db.VarChar(50)
+  budget_range        String?       @db.VarChar(100)
+  academic_background String?       @db.Text
+  english_test_score  String?       @db.VarChar(100)
+
+  created_at          DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime      @updatedAt @db.Timestamptz(6)
+
+  contact       Contacts        @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  conversations Conversations[]
+
+  @@index([assigned_advisor_id])
+  @@index([status, created_at(sort: Desc)])
+  @@map("students")
+}
+
+model Conversations {
+  id               String             @id @default(uuid()) @db.Uuid
+  student_id       String             @db.Uuid
+  mode             ConversationMode   @default(AI_BOT)
+  status           ConversationStatus @default(ACTIVE)
+  last_activity_at DateTime           @default(now()) @db.Timestamptz(6)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+
+  student  Student                @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  messages ConversationMessages[]
+
+  @@index([student_id])
+  @@index([mode, status])
+  @@map("conversations")
+}
+
+model ConversationMessages {
+  id              String            @id @default(uuid()) @db.Uuid
+  conversation_id String            @db.Uuid
+  sender_type     MessageSenderType
+  content         String            @db.Text
+  metadata        Json?
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+
+  conversation Conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@index([conversation_id, created_at(sort: Desc)])
+  @@map("conversation_messages")
+}
