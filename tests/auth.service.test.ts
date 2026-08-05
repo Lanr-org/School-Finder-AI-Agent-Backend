@@ -12,6 +12,7 @@ import {
 import { hashRefreshToken } from '../src/common/security/tokenHash'
 import EmailProvider from '../src/integrations/email/email.provider'
 import AuthRepo from '../src/modules/auth/auth.repository'
+import TeamRepo from '../src/modules/team/team.repository'
 import AuthService from '../src/modules/auth/auth.service'
 
 vi.mock('../src/modules/auth/auth.repository', () => ({
@@ -29,6 +30,13 @@ vi.mock('../src/modules/auth/auth.repository', () => ({
     createPasswordResetToken: vi.fn(),
     findPasswordResetTokenByHash: vi.fn(),
     resetPasswordAndRevokeSessions: vi.fn(),
+    UpdateInvitationAndUserPassword: vi.fn(),
+  },
+}))
+
+vi.mock('../src/modules/team/team.repository', () => ({
+  default: {
+    FindTeamInvitation: vi.fn(),
   },
 }))
 
@@ -66,6 +74,7 @@ vi.mock('../src/config/logger', () => ({
 }))
 
 const authRepoMock = vi.mocked(AuthRepo)
+const teamRepoMock = vi.mocked(TeamRepo)
 const generateOpaqueTokenMock = vi.mocked(generateOpaqueToken)
 const hashOpaqueTokenMock = vi.mocked(hashOpaqueToken)
 const hashPasswordMock = vi.mocked(hashPassword)
@@ -1089,5 +1098,157 @@ describe('AuthService.ResetPassword', () => {
 
     expect(hashPasswordMock).not.toHaveBeenCalled()
     expect(authRepoMock.resetPasswordAndRevokeSessions).not.toHaveBeenCalled()
+  })
+})
+
+describe('AuthService.VerifyInvitationToken', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const invitationRecord = {
+    id: 'invite-uuid',
+    user_id: 'user-uuid',
+    invited_by_user_id: 'admin-uuid',
+    token_hash: 'a'.repeat(64),
+    expires_at: new Date(Date.now() + 3600 * 1000),
+    accepted_at: null,
+    canceled_at: null,
+    sent_at: new Date(),
+    last_sent_at: new Date(),
+    send_count: 1,
+    user: {
+      full_name: 'Bob Invited',
+      email: 'bob@example.com',
+    },
+  }
+
+  it('verifies a valid invitation token and returns full name and email', async () => {
+    hashOpaqueTokenMock.mockReturnValue('a'.repeat(64))
+    teamRepoMock.FindTeamInvitation.mockResolvedValue(
+      invitationRecord as unknown as Awaited<
+        ReturnType<typeof TeamRepo.FindTeamInvitation>
+      >,
+    )
+
+    const result = await AuthService.VerifyInvitationToken('a'.repeat(128))
+
+    expect(result).toEqual({
+      fullName: 'Bob Invited',
+      email: 'bob@example.com',
+    })
+    expect(hashOpaqueTokenMock).toHaveBeenCalledWith('a'.repeat(128))
+    expect(teamRepoMock.FindTeamInvitation).toHaveBeenCalledWith({
+      token_hash: 'a'.repeat(64),
+    })
+  })
+
+  it('rejects invalid or non-hex tokens', async () => {
+    await expect(
+      AuthService.VerifyInvitationToken('invalid-token'),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      code: AUTH_ERROR_CODES.TOKEN_INVALID,
+    })
+  })
+
+  it('rejects missing or already accepted/canceled invitations', async () => {
+    hashOpaqueTokenMock.mockReturnValue('a'.repeat(64))
+    teamRepoMock.FindTeamInvitation.mockResolvedValue(null)
+
+    await expect(
+      AuthService.VerifyInvitationToken('a'.repeat(128)),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      code: AUTH_ERROR_CODES.TOKEN_INVALID,
+    })
+
+    teamRepoMock.FindTeamInvitation.mockResolvedValue({
+      ...invitationRecord,
+      accepted_at: new Date(),
+    } as unknown as Awaited<ReturnType<typeof TeamRepo.FindTeamInvitation>>)
+
+    await expect(
+      AuthService.VerifyInvitationToken('a'.repeat(128)),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      code: AUTH_ERROR_CODES.TOKEN_INVALID,
+    })
+  })
+
+  it('rejects expired invitation tokens', async () => {
+    hashOpaqueTokenMock.mockReturnValue('a'.repeat(64))
+    teamRepoMock.FindTeamInvitation.mockResolvedValue({
+      ...invitationRecord,
+      expires_at: new Date(Date.now() - 1000),
+    } as unknown as Awaited<ReturnType<typeof TeamRepo.FindTeamInvitation>>)
+
+    await expect(
+      AuthService.VerifyInvitationToken('a'.repeat(128)),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      code: AUTH_ERROR_CODES.TOKEN_EXPIRED,
+    })
+  })
+})
+
+describe('AuthService.ResetPasswordFromInvitation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const invitationRecord = {
+    id: 'invite-uuid',
+    user_id: 'user-uuid',
+    invited_by_user_id: 'admin-uuid',
+    token_hash: 'a'.repeat(64),
+    expires_at: new Date(Date.now() + 3600 * 1000),
+    accepted_at: null,
+    canceled_at: null,
+    sent_at: new Date(),
+    last_sent_at: new Date(),
+    send_count: 1,
+    user: {
+      full_name: 'Bob Invited',
+      email: 'bob@example.com',
+    },
+  }
+
+  it('successfully sets password from invitation and updates status to ACTIVE', async () => {
+    hashOpaqueTokenMock.mockReturnValue('a'.repeat(64))
+    teamRepoMock.FindTeamInvitation.mockResolvedValue(
+      invitationRecord as unknown as Awaited<
+        ReturnType<typeof TeamRepo.FindTeamInvitation>
+      >,
+    )
+    hashPasswordMock.mockResolvedValue('hashed-new-password')
+    authRepoMock.UpdateInvitationAndUserPassword.mockResolvedValue(undefined)
+
+    await AuthService.ResetPasswordFromInvitation('a'.repeat(128), {
+      newPassword: 'NewCorrectPass123',
+      confirmNewPassword: 'NewCorrectPass123',
+    })
+
+    expect(hashPasswordMock).toHaveBeenCalledWith('NewCorrectPass123')
+    expect(authRepoMock.UpdateInvitationAndUserPassword).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-uuid',
+        newPasswordHash: 'hashed-new-password',
+        invitationId: 'invite-uuid',
+      }),
+    )
+  })
+
+  it('rejects password confirm mismatch', async () => {
+    await expect(
+      AuthService.ResetPasswordFromInvitation('a'.repeat(128), {
+        newPassword: 'NewCorrectPass123',
+        confirmNewPassword: 'MismatchNewPassword',
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Passwords do not match',
+    })
   })
 })

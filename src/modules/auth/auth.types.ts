@@ -85,3 +85,10 @@ export type ResetPasswordTransactionData = {
   currentTokenVersion: number
   changedAt: Date
 }
+
+export type UpdateInvitationAndUserPasswordData = {
+  userId: string
+  newPasswordHash: string
+  acceptedAt: Date
+  invitationId: string
+}

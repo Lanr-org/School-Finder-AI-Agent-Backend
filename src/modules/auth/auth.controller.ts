@@ -49,6 +49,7 @@ class AuthController {
       next(error)
     }
   }
+
   static Logout = async (req: Request, res: Response, next: NextFunction) => {
     try {
       if (!req.auth) {
@@ -202,6 +203,7 @@ class AuthController {
       next(error)
     }
   }
+
   static VerifyResetPasswordToken = async (
     req: Request,
     res: Response,
@@ -237,6 +239,52 @@ class AuthController {
 
       clearCookie(res)
       res.status(200).send(
+        successResponse(true, 'Password reset successfully', undefined, {
+          requestId: req.id,
+        }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  static VerifyInvitationToken = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { token } = req.params
+      const verifiedToken = await AuthService.VerifyInvitationToken(
+        token as string,
+      )
+      res.status(200).send(
+        successResponse(
+          true,
+          'Invitation verification token is valid',
+          verifiedToken,
+          {
+            requestId: req.id,
+          },
+        ),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  static ResetPasswordFromInvitation = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { token } = req.params
+      await AuthService.ResetPasswordFromInvitation(
+        token as string,
+        req.body as ResetPasswordData,
+      )
+      res.status(204).send(
         successResponse(true, 'Password reset successfully', undefined, {
           requestId: req.id,
         }),

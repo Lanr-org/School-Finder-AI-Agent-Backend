@@ -26,6 +26,8 @@ vi.mock('../src/modules/auth/auth.service', () => ({
     ForgotPassword: vi.fn(),
     VerifyResetPasswordToken: vi.fn(),
     ResetPassword: vi.fn(),
+    VerifyInvitationToken: vi.fn(),
+    ResetPasswordFromInvitation: vi.fn(),
   },
 }))
 
@@ -130,11 +132,11 @@ const activeSession = {
   token_family: 'token-family-id',
   user_agent: 'vitest-agent',
   ip_address: '127.0.0.1',
-  expires_at: new Date('2026-07-01T00:00:00.000Z'),
-  revoked_at: null,
-  last_used_at: null,
+  expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  revoked_at: null as Date | null,
+  last_used_at: null as Date | null,
   created_at: new Date('2026-06-01T00:00:00.000Z'),
-} as const
+}
 
 const mockAuthenticatedRequest = () => {
   authRepoMock.findUser.mockResolvedValue(activeUser)
@@ -810,5 +812,119 @@ describe('POST /api/v1/auth/change-password', () => {
       code: 'AUTH_SESSION_REVOKED',
     })
     expect(AuthService.ChangePassword).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/v1/auth/invitations/:token', () => {
+  const testApp: Express = app
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('verifies the invitation token and returns minimal public user state', async () => {
+    const verifiedInvitation = {
+      email: 'invited@example.com',
+      fullName: 'Invited User',
+    }
+    vi.mocked(AuthService.VerifyInvitationToken).mockResolvedValue(
+      verifiedInvitation,
+    )
+
+    const response = await request(testApp)
+      .get('/api/v1/auth/invitations/' + 'a'.repeat(128))
+      .expect(200)
+
+    const responseBody =
+      response.body as unknown as VerifyResetPasswordTokenResponseBody
+
+    expect(responseBody).toMatchObject({
+      success: true,
+      message: 'Invitation verification token is valid',
+      data: verifiedInvitation,
+    })
+    expect(AuthService.VerifyInvitationToken).toHaveBeenCalledWith(
+      'a'.repeat(128),
+    )
+  })
+
+  it('rejects malformed invitation tokens before calling the service', async () => {
+    const response = await request(testApp)
+      .get('/api/v1/auth/invitations/invalid-token')
+      .expect(400)
+
+    const responseBody = response.body as unknown as ErrorResponseBody
+
+    expect(responseBody.error).toMatchObject({
+      message: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+    })
+    expect(AuthService.VerifyInvitationToken).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/v1/auth/invitations/:token/accept', () => {
+  const testApp: Express = app
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('accepts the invitation and sets the password', async () => {
+    vi.mocked(AuthService.ResetPasswordFromInvitation).mockResolvedValue(
+      undefined,
+    )
+
+    await request(testApp)
+      .post('/api/v1/auth/invitations/' + 'a'.repeat(128) + '/accept')
+      .send({
+        newPassword: 'CorrectPass123',
+        confirmNewPassword: 'CorrectPass123',
+      })
+      .expect(204)
+
+    expect(AuthService.ResetPasswordFromInvitation).toHaveBeenCalledWith(
+      'a'.repeat(128),
+      {
+        newPassword: 'CorrectPass123',
+        confirmNewPassword: 'CorrectPass123',
+      },
+    )
+  })
+
+  it('rejects malformed invitation tokens before calling the service', async () => {
+    const response = await request(testApp)
+      .post('/api/v1/auth/invitations/invalid-token/accept')
+      .send({
+        newPassword: 'CorrectPass123',
+        confirmNewPassword: 'CorrectPass123',
+      })
+      .expect(400)
+
+    const responseBody = response.body as unknown as ErrorResponseBody
+
+    expect(responseBody.error).toMatchObject({
+      message: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+    })
+    expect(AuthService.ResetPasswordFromInvitation).not.toHaveBeenCalled()
+  })
+
+  it('rejects weak passwords before calling the service', async () => {
+    const response = await request(testApp)
+      .post('/api/v1/auth/invitations/' + 'a'.repeat(128) + '/accept')
+      .send({
+        newPassword: 'weak',
+        confirmNewPassword: 'weak',
+      })
+      .expect(400)
+
+    const responseBody = response.body as unknown as ErrorResponseBody
+
+    expect(responseBody.error).toMatchObject({
+      message: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+    })
+    expect(AuthService.ResetPasswordFromInvitation).not.toHaveBeenCalled()
   })
 })

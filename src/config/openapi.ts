@@ -11,6 +11,7 @@ import {
   resetPasswordSchema,
   resetPasswordTokenParamsSchema,
 } from '../modules/auth/auth.schemas'
+import { TeamSchemas } from '../modules/team/team.schemas'
 
 const registry = new OpenAPIRegistry()
 
@@ -94,6 +95,21 @@ const verifyResetPasswordTokenResponseSchema = registry.register(
   }),
 )
 
+const verifyInvitationTokenResponseSchema = registry.register(
+  'VerifyInvitationTokenResponse',
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    data: z.object({
+      email: z.string().email(),
+      fullName: z.string(),
+    }),
+    meta: z.object({
+      requestId: z.string(),
+    }),
+  }),
+)
+
 const safeUserSchema = z.object({
   public_id: z.string(),
   full_name: z.string(),
@@ -133,6 +149,18 @@ const changePasswordResponseSchema = registry.register(
   }),
 )
 
+const sendInvitationResponseSchema = registry.register(
+  'sendInvitationResponse',
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    data: safeUserSchema,
+    meta: z.object({
+      requestId: z.string(),
+    }),
+  }),
+)
+
 const registeredLoginSchema = registry.register('LoginRequest', loginSchema)
 const registeredEditUserDetailsSchema = registry.register(
   'EditUserDetailsRequest',
@@ -154,6 +182,12 @@ const registeredResetPasswordSchema = registry.register(
   'ResetPasswordRequest',
   resetPasswordSchema,
 )
+
+const registeredSendInvitationSchema = registry.register(
+  'SendInvitationRequest',
+  TeamSchemas.invitationSchema,
+)
+
 const refreshCookieParameter = z.object({
   refreshToken: z
     .string()
@@ -654,6 +688,131 @@ registry.registerPath({
     },
     403: {
       description: 'Account is not active.',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/team',
+  tags: ['team'],
+  security: [{ bearerAuth: [] }],
+  summary: 'Invite a new user based on a role as an admin',
+  description:
+    'Requires a bearer access token, enforces the role permission, creates both a token and its hash,  add the token to the url , sends the url in the email and returns an email sent successfully message',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: registeredSendInvitationSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Invitation Email sent successfully',
+      content: {
+        'application/json': {
+          schema: sendInvitationResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Request validation failed.',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: '',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/auth/invitations/{token}',
+  tags: ['Auth'],
+  summary: 'Verify an invitation token',
+  description:
+    "Validates an invitation token from the set-password link. The raw token is hashed before lookup. Returns the invited user's email and full name if valid.",
+  request: {
+    params: registeredResetPasswordTokenParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Invitation token is valid.',
+      content: {
+        'application/json': {
+          schema: verifyInvitationTokenResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Token parameter is malformed.',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Token not found, has already been used, or expired.',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/auth/invitations/{token}/accept',
+  tags: ['Auth'],
+  summary: 'Accept an invitation and set password',
+  description:
+    "Accepts a pending invitation by setting the user's password and activating the account. The raw token is hashed before lookup. Rejects if the invitation is already accepted, canceled, or expired.",
+  request: {
+    params: registeredResetPasswordTokenParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: registeredResetPasswordSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    204: {
+      description: 'Invitation accepted and password set successfully.',
+    },
+    400: {
+      description: 'Validation failed or token parameter is malformed.',
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Token not found, has already been used, or expired.',
       content: {
         'application/json': {
           schema: errorResponseSchema,

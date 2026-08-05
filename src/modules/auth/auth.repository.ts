@@ -7,6 +7,7 @@ import type {
   PasswordResetTokenDbData,
   ResetPasswordTransactionData,
   RotateRefreshTokenData,
+  UpdateInvitationAndUserPasswordData,
 } from './auth.types'
 
 class AuthRepo {
@@ -221,6 +222,26 @@ class AuthRepo {
       })
 
       return updatedUser
+    })
+  }
+
+  static async UpdateInvitationAndUserPassword(
+    data: UpdateInvitationAndUserPasswordData,
+  ) {
+    await prisma.$transaction(async (tx) => {
+      await tx.users.update({
+        where: { id: data.userId },
+        data: {
+          password_hash: data.newPasswordHash,
+          status: 'ACTIVE',
+        },
+      })
+      await tx.team_Invitations.update({
+        where: { id: data.invitationId },
+        data: {
+          accepted_at: data.acceptedAt,
+        },
+      })
     })
   }
 }

@@ -10,6 +10,6 @@ export const setCookie = (res: Response, cookie: string) => {
   })
 }
 
-export const clearCookie = (res:Response)=>{
+export const clearCookie = (res: Response) => {
   res.clearCookie('refreshToken')
 }

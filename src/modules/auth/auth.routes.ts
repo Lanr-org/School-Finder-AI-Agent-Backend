@@ -77,3 +77,17 @@ authRouter.post(
   validate(resetPasswordSchema),
   AuthController.ResetPassword,
 )
+
+// TEAM
+authRouter.get(
+  '/invitations/:token',
+  validateParams(resetPasswordTokenParamsSchema),
+  AuthController.VerifyInvitationToken,
+)
+
+authRouter.post(
+  '/invitations/:token/accept',
+  validateParams(resetPasswordTokenParamsSchema),
+  validate(resetPasswordSchema),
+  AuthController.ResetPasswordFromInvitation,
+)

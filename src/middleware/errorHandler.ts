@@ -41,5 +41,5 @@ export const errorHandler = (
     errDetails = { ...errDetails, details: err.details }
   }
 
-  return res.status(statusCode).send({success:false, error:errDetails})
+  return res.status(statusCode).send({ success: false, error: errDetails })
 }
