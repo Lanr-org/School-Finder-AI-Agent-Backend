@@ -21,7 +21,7 @@ export class TeamSchemas {
         .trim()
         .min(2, 'Full name must be at least 2 characters')
         .optional(),
-      email: z.string().trim().email('Must be a valid email address').max(160),
+      email: z.string().trim().email('Must be a valid email address').max(160).optional(),
       phone: z.string().trim().min(3).max(40).nullable().optional(),
     }).refine(
     (data) =>

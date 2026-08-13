@@ -32,6 +32,7 @@ describe('ContactsService & StudentsService Unit Tests', () => {
       vi.spyOn(ContactsRepo, 'findContactWithActiveStudent').mockResolvedValue(mockExistingContact as any)
 
       const result = await ContactsService.resolveTelegramContact({
+        providerType: 'TELEGRAM',
         providerUserId: '987654321',
         firstName: 'Chinedu',
       })
@@ -56,6 +57,7 @@ describe('ContactsService & StudentsService Unit Tests', () => {
       })
 
       const result = await ContactsService.resolveTelegramContact({
+        providerType: 'TELEGRAM',
         providerUserId: '11223344',
         firstName: 'Amina',
       })
