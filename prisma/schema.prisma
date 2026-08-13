@@ -233,4 +233,137 @@ model ConversationMessages {
 
   @@index([conversation_id, created_at(sort: Desc)])
   @@map("conversation_messages")
+}
+
+// ==========================================
+// ENUMS FOR SCHOOLS & PROGRAMS
+// ==========================================
+
+enum SchoolType {
+  UNIVERSITY
+  COLLEGE
+  INSTITUTE
+  POLYTECHNIC
+}
+
+enum SchoolRecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PartnerStatus {
+  PARTNER
+  PROSPECT
+  NON_PARTNER
+}
+
+// ==========================================
+// MODELS FOR SCHOOLS & PROGRAMS
+// ==========================================
+
+model Schools {
+  id         String @id @default(uuid()) @db.Uuid
+  public_id  String @unique @db.VarChar(24)
+
+  // Profile
+  name          String             @db.VarChar(200)
+  school_type   SchoolType
+  record_status SchoolRecordStatus @default(ACTIVE)
+  description   String?            @db.Text
+
+  // Contact & website
+  website           String?  @db.VarChar(255)
+  admissions_email  String?  @db.VarChar(255)
+  phone_numbers     String[]
+
+  // Location
+  street_address String?  @db.VarChar(255)
+  city           String   @db.VarChar(120)
+  country        String   @db.VarChar(120)
+  postal_code    String?  @db.VarChar(20)
+
+  // Partnership & internal assessment
+  partner_status                PartnerStatus @default(PROSPECT)
+  visa_friendliness_score       Int?
+  visa_friendliness_notes       String?       @db.Text
+  admission_friendliness_score  Int?
+  admission_friendliness_notes  String?       @db.Text
+  ranking_reputation_notes      String?       @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  programs Programs[]
+
+  @@index([country, city])
+  @@index([partner_status])
+  @@index([school_type])
+  @@map("schools")
+}
+
+// ==========================================
+// ENUMS FOR PROGRAMS
+// ==========================================
+
+enum StudyLevel {
+  UNDERGRADUATE
+  POSTGRADUATE
+  DOCTORATE
+  FOUNDATION
+}
+
+enum IntakeMonth {
+  JANUARY
+  FEBRUARY
+  MARCH
+  APRIL
+  MAY
+  JUNE
+  JULY
+  AUGUST
+  SEPTEMBER
+  OCTOBER
+  NOVEMBER
+  DECEMBER
+}
+
+model Programs {
+  id        String @id @default(uuid()) @db.Uuid
+  public_id String @unique @db.VarChar(24)
+
+  // Profile
+  name         String     @db.VarChar(200)
+  study_level  StudyLevel
+  qualification String    @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
+  category     String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
+  duration     String     @db.VarChar(50)  // e.g. "2 years", "18 months"
+
+  // School link
+  school_id String  @db.Uuid
+  school    Schools @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  // Tuition & funding
+  tuition_amount           Decimal @db.Decimal(10, 2)
+  tuition_currency         String  @db.VarChar(3) // ISO code, e.g. "USD", "GBP", "CAD"
+  scholarship_availability String? @db.VarChar(100) // e.g. "Full", "10%", "25%", "None"
+
+  // Intakes & deadlines
+  intake_periods       IntakeMonth[]
+  application_deadline DateTime?
+  primary_intake_year  Int?
+
+  // Entry requirements
+  academic_requirements String? @db.Text
+  english_requirements  String? @db.Text
+
+  // Operations
+  operation_notes String? @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([school_id])
+  @@index([study_level])
+  @@index([category])
+  @@map("programs")
 }

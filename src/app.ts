@@ -10,6 +10,8 @@ import { errorHandler } from './middleware/errorHandler'
 import { authRouter } from './modules/auth/auth.routes'
 import { requestId } from './middleware/requestId'
 import { teamRouter } from './modules/team/team.routes'
+import { schoolsRouter } from './modules/schools/schools.routes'
+import { programsRouter } from './modules/programs/programs.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -30,6 +32,8 @@ if (env.docsEnabled) {
 const version = `/api/v1`
 app.use(`${version}/auth`, authRouter)
 app.use(`${version}/team`, teamRouter)
+app.use(`${version}/schools`, schoolsRouter)
+app.use(`${version}/programs`, programsRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)
