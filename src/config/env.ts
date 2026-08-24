@@ -25,6 +25,10 @@ const envSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().optional(),
 
+  // Gemini (LLM) Integration
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.6-flash'),
+
   // Centrifugo Integration
   CENTRIFUGO_API_URL: z.string().default('http://localhost:8000/api'),
   CENTRIFUGO_API_KEY: z.string().optional(),
@@ -61,6 +65,9 @@ export const env = {
   telegramBotToken: parsed.data.TELEGRAM_BOT_TOKEN,
   telegramWebhookSecret: parsed.data.TELEGRAM_WEBHOOK_SECRET,
   telegramWebhookUrl: parsed.data.TELEGRAM_WEBHOOK_URL,
+
+  geminiApiKey: parsed.data.GEMINI_API_KEY,
+  geminiModel: parsed.data.GEMINI_MODEL,
 
   centrifugoApiUrl: parsed.data.CENTRIFUGO_API_URL,
   centrifugoApiKey: parsed.data.CENTRIFUGO_API_KEY,
