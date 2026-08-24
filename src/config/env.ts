@@ -9,13 +9,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   COOKIE_SECRET: z.string().min(1, 'COOKIE_SECRET is required'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
-  DOCS_ENABLED: z.coerce.boolean().default(true),
+  DOCS_ENABLED: z.stringbool().default(true),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
 
   // Email (Optional in dev)
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
-  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_SECURE: z.stringbool().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default('School Finder AI <no-reply@example.com>'),
