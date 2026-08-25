@@ -362,3 +362,95 @@ POST /api/v1/auth/invitations/:token/accept  — accept invitation and set passw
    - Added HTTP integration tests in `tests/auth.http.test.ts` verifying validation errors, malformed tokens, valid token verification, and successful password reset.
    - Added unit tests in `tests/auth.service.test.ts` for `VerifyInvitationToken` and `ResetPasswordFromInvitation` covering validation, already-consumed tokens, and token expiry.
 6. **Code Quality**: Checked typecheck, ESLint, and Prettier formatting across the entire workspace (all passing successfully with zero warnings/errors).
+
+---
+
+## School Finder AI Integration
+
+6-step roadmap for wiring AI-driven school/program matching on top of the Schools + Programs +
+Contacts/Students/Conversations modules (business context: the bot is a conversion funnel —
+tuition → IELTS/WAEC → proof of funds → visa — not a neutral info service, so the AI prompt steers
+conversationally without ever pitching fees or commissions).
+
+### Step 1 — Matching/retrieval service (DONE)
+
+- `src/modules/matching/`: plain Prisma filtering over Schools+Programs (no embeddings needed —
+  the data is categorical/numeric).
+- `MatchingService.FindMatchesForStudent(studentPublicId, limit)` normalizes the student's
+  free-text `study_level` via keyword matching, filters by study level + destination country +
+  intake month/year, sorts by tuition ascending.
+
+### Step 2 — LLM client/config (DONE)
+
+- `src/integrations/llm/`: provider-agnostic `LLMClient` interface (`llm.types.ts`) with a
+  `GeminiClient` implementation (`gemini.client.ts`, `@google/genai`), exported as a singleton
+  `llmClient`.
+- Env: `GEMINI_API_KEY`, `GEMINI_MODEL` (default `gemini-3.6-flash` — `gemini-3.7-flash` returned
+  real `503 UNAVAILABLE "high demand"` errors from Google during testing; avoid defaulting to it).
+
+### Step 3 — AI orchestration + message persistence (DONE)
+
+- `src/modules/conversations/conversations.repository.ts`: first thing in the codebase to persist
+  inbound student text (previously only broadcast live to the dashboard via Centrifugo, never
+  saved).
+- `src/modules/ai/ai.prompts.ts` (`STUDY_ABROAD_SYSTEM_PROMPT`) + `ai-reply.service.ts`
+  (`AIReplyService.GenerateReply`): persists the student message, fetches the Step-1 shortlist +
+  last 20 messages, calls the LLM, persists + returns the reply. Does not check
+  `Conversations.mode` itself (that gate is Step 4's job) and does not implement the human handoff
+  itself (Step 5) — the prompt only tells the AI to suggest connecting to a human at the right
+  moments.
+
+### Step 4 — Wire into the Telegram inbound worker (DONE)
+
+- No new BullMQ queue — wired directly into `telegram-inbound.worker.ts`: after command/callback
+  handling, free-text messages check `Conversations.mode`, and if `AI_BOT`, call
+  `AIReplyService.GenerateReply` then send the reply via Telegram. Wrapped in try/catch with a
+  graceful fallback message on failure (e.g. Gemini 503).
+- Live-tested end-to-end via the maintainer's own Telegram account through ngrok, 2026-08-24.
+
+### Data-model fixes (2026-08-25, before Step 5)
+
+Two structural gaps found while reviewing intake handling, both live-verified against real data:
+
+1. **Intake dates were imprecise.** `Programs.intake_periods`/`primary_intake_year`/
+   `application_deadline` shared one year and one deadline across every month in the array (e.g. a
+   program couldn't have "September 2026" and "January 2027" as genuinely different deadlines).
+   Telegram's intake buttons were also hardcoded to stale `Fall 2026`/`Spring 2027` labels
+   disconnected from the schema's `IntakeMonth` enum.
+   - Replaced with a `ProgramIntakes` table (`program_id, month, year, application_deadline` — one
+     row per concrete intake window). `Student.target_intake` (free text) replaced with structured
+     `target_intake_month`/`target_intake_year`.
+   - Telegram intake buttons now compute the next upcoming September/January off `new Date()`
+     instead of hardcoded labels — never goes stale, no redeploy needed per year.
+   - Migration `20260825001044_add_program_intakes_structured_student_intake`. Old columns dropped
+     without backfill (local test data, deliberate call — the old shape was already imprecise,
+     nothing worth carrying forward). `programs-fake-data.csv` updated to a new `intakes` column
+     format; the 64 existing Programs were matched by name+school and backfilled with 96
+     `ProgramIntakes` rows rather than re-imported from scratch.
+2. **Country matching silently returned zero results.** `MatchingRepo` did exact-string
+   `country: { in: [...] }` against `Schools.country` (full names like "United Kingdom"), but
+   Telegram's `SELECT_DESTINATION` buttons store abbreviations (`UK`, `USA`, `CANADA`, `IRELAND`).
+   Confirmed live: the maintainer's own test student (`STU-8440`, `target_destinations: ["UK"]`)
+   got 0 matches before the fix. Fixed with a `COUNTRY_ALIASES` map in `matching.service.ts`
+   (`UK`→`United Kingdom`, `USA`/`US`→`United States`) plus `mode: 'insensitive'` on the repo's
+   `country: { in }` filter to absorb plain casing differences generally. Re-verified: same student
+   now gets 5 real matches with real intake data attached.
+
+Committed as `b912dbf`.
+
+## Next School Finder AI Work
+
+- **Step 5 — Escalation logic (not started).** `Conversations.mode`
+  (`AI_BOT | HUMAN_ADVISOR | ESCALATED`), `Student.assigned_advisor_id`, and `MessageSenderType`
+  (`AGENT` vs `ADVISOR`) exist in the schema for human handoff but nothing writes to them yet. Open
+  questions: who flips the mode switch (student request / advisor claims it / auto-escalation
+  rule), and whether `HUMAN_ADVISOR` → `AI_BOT` is reversible or needs explicit handback. Proof-of-
+  funds/visa-readiness is a likely trigger given the funnel business model. Also plan to fold in
+  `StudentProgramInterest` (student_id, program_id, status) tracking here — which specific
+  program(s) a student has settled on, confirmed via tap-to-confirm buttons after the AI presents
+  its shortlist rather than inferred from free text — since it's the same kind of record an advisor
+  needs the moment they take over a conversation.
+- **Step 6 — End-to-end testing (not started).**
+- Registration: current 3-button onboarding (level → destination → intake) captures preferences
+  only, not contact identity (phone/email). Decided not to add friction before the AI chat starts —
+  capture phone/email later, at the moment a conversation escalates to a human advisor (Step 5).
