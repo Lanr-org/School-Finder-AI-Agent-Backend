@@ -141,7 +141,6 @@ enum StudentStatus {
 enum ConversationMode {
   AI_BOT
   HUMAN_ADVISOR
-  ESCALATED
 }
 
 enum ConversationStatus {
@@ -208,6 +207,7 @@ model Student {
 
 model Conversations {
   id               String             @id @default(uuid()) @db.Uuid
+  public_id        String             @unique @db.VarChar(24)
   student_id       String             @db.Uuid
   mode             ConversationMode   @default(AI_BOT)
   status           ConversationStatus @default(ACTIVE)

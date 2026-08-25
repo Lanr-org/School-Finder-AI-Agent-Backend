@@ -15,6 +15,11 @@ export const createPublicProgramId = (): string => {
   return `PRG-${randomNum}`
 }
 
+export const createPublicConversationId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `CON-${randomNum}`
+}
+
 const isPublicIdConflict = (error: unknown): boolean => {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&

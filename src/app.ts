@@ -12,6 +12,8 @@ import { requestId } from './middleware/requestId'
 import { teamRouter } from './modules/team/team.routes'
 import { schoolsRouter } from './modules/schools/schools.routes'
 import { programsRouter } from './modules/programs/programs.routes'
+import { studentsRouter } from './modules/students/students.routes'
+import { conversationsRouter } from './modules/conversations/conversations.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -34,6 +36,8 @@ app.use(`${version}/auth`, authRouter)
 app.use(`${version}/team`, teamRouter)
 app.use(`${version}/schools`, schoolsRouter)
 app.use(`${version}/programs`, programsRouter)
+app.use(`${version}/students`, studentsRouter)
+app.use(`${version}/conversations`, conversationsRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)

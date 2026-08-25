@@ -440,17 +440,119 @@ Committed as `b912dbf`.
 
 ## Next School Finder AI Work
 
-- **Step 5 — Escalation logic (not started).** `Conversations.mode`
-  (`AI_BOT | HUMAN_ADVISOR | ESCALATED`), `Student.assigned_advisor_id`, and `MessageSenderType`
-  (`AGENT` vs `ADVISOR`) exist in the schema for human handoff but nothing writes to them yet. Open
-  questions: who flips the mode switch (student request / advisor claims it / auto-escalation
-  rule), and whether `HUMAN_ADVISOR` → `AI_BOT` is reversible or needs explicit handback. Proof-of-
-  funds/visa-readiness is a likely trigger given the funnel business model. Also plan to fold in
-  `StudentProgramInterest` (student_id, program_id, status) tracking here — which specific
-  program(s) a student has settled on, confirmed via tap-to-confirm buttons after the AI presents
-  its shortlist rather than inferred from free text — since it's the same kind of record an advisor
-  needs the moment they take over a conversation.
 - **Step 6 — End-to-end testing (not started).**
 - Registration: current 3-button onboarding (level → destination → intake) captures preferences
   only, not contact identity (phone/email). Decided not to add friction before the AI chat starts —
-  capture phone/email later, at the moment a conversation escalates to a human advisor (Step 5).
+  capture phone/email later, at the moment a conversation escalates to a human advisor (now built,
+  see Step 5 below).
+- Deferred from Step 5: `StudentProgramInterest` (student_id, program_id, status) tracking — which
+  specific program(s) a student has settled on, confirmed via tap-to-confirm buttons after the AI
+  presents its shortlist rather than inferred from free text. Same kind of record an advisor needs
+  the moment they take over a conversation; not built yet.
+- Deferred: AI-generated conversation summaries and AI-extracted preference tags (budget, IELTS
+  status, etc. pulled from free text) — the ops frontend's conversation detail page already has UI
+  for both, but neither exists in the backend. Also deferred: advisor workload/capacity/
+  specialization tracking (`advisor_profiles` from the original `AGENTS.md` spec) — advisors today
+  are just `Users` with `role: ADVISOR`, nothing else.
+
+## Step 5 — Escalation & Human Handoff (2026-08-25, DONE, live-verified)
+
+Grounded in the actual React ops dashboard (`lanr-agents-frontend`, not just the `AGENTS.md` spec)
+by opening it in a browser: confirmed escalation is advisor/ops-initiated (an `Escalate` /
+`Mark resolved` button pair on the conversation detail page, not a student-facing Telegram
+trigger), and that an unassigned conversation is a valid state ops routes to an advisor after the
+fact.
+
+**Schema cleanup**: `Conversations.mode` no longer has an `ESCALATED` value (was redundant with
+`Conversations.status`, which already has one) — `mode` is now just `AI_BOT | HUMAN_ADVISOR`
+("who replies right now"), `status` (`ACTIVE | ESCALATED | RESOLVED`) owns the lifecycle.
+Escalating sets both together. Resolving only changes `status` — `mode` deliberately stays
+`HUMAN_ADVISOR` (no auto-handback to the AI once a human has touched a conversation; handback would
+need to be an explicit future action). Also added `Conversations.public_id` (`CON-XXXX`, matching
+the `STU-`/`SCH-`/`PRG-` convention) — didn't exist before, needed for a stable API-facing ID.
+Migration `20260825011413_conversation_public_id_and_mode_cleanup`.
+
+**New API surface** (first HTTP routes for both modules — previously service/repository only):
+
+```
+GET   /api/v1/students                        — list, advisor-scoped for ADVISOR role
+GET   /api/v1/students/:studentId
+PATCH /api/v1/students/:studentId/advisor      — assign/unassign, ADMIN only
+
+GET   /api/v1/conversations                    — list, advisor-scoped for ADVISOR role
+GET   /api/v1/conversations/:conversationId
+POST  /api/v1/conversations/:conversationId/replies    — advisor reply, sent via Telegram
+POST  /api/v1/conversations/:conversationId/escalate
+POST  /api/v1/conversations/:conversationId/resolve
+```
+
+**Ownership rule** (`src/common/security/ownership.ts`, `assertStudentOwnership`): ADMIN can act on
+any student/conversation; ADVISOR is restricted to students where `assigned_advisor_id` equals
+their own user id — enforced server-side, the client's `advisorId` query param is never trusted
+(ADVISOR role always gets forced to their own id). `PATCH /students/:studentId/advisor` is
+ADMIN-only (advisors don't self-assign by default, per the capability table).
+
+**Live-verified** end-to-end against real data (the maintainer's own live-tested student/advisor
+accounts, `STU-8440` / `USR-946B7F71768D`), calling the service layer directly: assign advisor →
+escalate (mode/status flip correctly) → advisor reply (persisted as `ADVISOR` sender, actually
+delivered through the real Telegram outbound queue) → detail view shows correct message order →
+a *different*, unassigned advisor gets a 403 on the same conversation → advisor-scoped list/student
+queries return exactly 1 result → resolve sets status without reverting mode. All 8 checks passed.
+**Note**: this test run mutated real data — `STU-8440` now has an assigned advisor and a
+`RESOLVED` conversation, and it sent one real Telegram message to the maintainer's phone
+("Hi, this is Amina — I can help from here.").
+
+Files: `src/common/security/ownership.ts` (new), `src/modules/students/{schemas,controller,routes}.ts`
+(new), `src/modules/conversations/{types,schemas,service,controller,routes}.ts` (new),
+`students.repository.ts`/`.service.ts`/`.types.ts`, `conversations.repository.ts`,
+`contacts.repository.ts`, `publicId.ts`, `app.ts` (modified). Typecheck clean. Not yet committed.
+
+**Not built** (deferred, see list above): AI conversation summaries, AI preference extraction,
+advisor capacity/specialization tracking, `StudentProgramInterest`. The frontend's `ProgramsPage.tsx`
+and `programs.api.ts` were also fixed this session for the earlier intake-table schema change
+(see prior entry) — that was a live crash, now resolved and verified in-browser.
+
+## Step 5 follow-up: handback, an escalation bug, an advisor-id bug, and frontend wiring
+
+**"Hand back to AI" button** (`POST /conversations/:conversationId/handback`): sets `mode` back to
+`AI_BOT` and `status` back to `ACTIVE` on the *same* conversation thread — unlike Resolve, which
+closes the thread and loses message-history context for whatever conversation comes next. Only
+valid while `mode === HUMAN_ADVISOR` (409 otherwise). `ConversationsRepo.handbackConversation`.
+
+**Real bug found and fixed**: `ContactsRepo.findContactWithActiveStudent` only looked for a
+conversation with `status: ACTIVE` to decide whether a Telegram sender was mid-conversation. Once
+a conversation became `ESCALATED` it fell out of that check, so a student messaging again *while
+an advisor was actively handling the escalation* would silently spawn a brand-new `AI_BOT`
+conversation — the AI would jump back in mid-handoff, defeating the point of Step 5. Fixed: the
+query now treats both `ACTIVE` and `ESCALATED` as "current" — only `RESOLVED` closes a thread.
+
+**Real bug found and fixed**: the `assignedAdvisorId` field in student/conversation API responses
+was the advisor's *internal* Users UUID, not their public ID — unusable by any client (no way to
+resolve it to a name, and it leaked an internal id). Added `TeamRepo.findUsersByIds` and
+`src/modules/team/advisor-lookup.ts` (`buildAdvisorLookup`) to batch-resolve advisor ids to
+`{publicId, fullName}` in one query per list/detail call; both student and conversation responses
+now return `assignedAdvisor: {publicId, fullName} | null` instead of a raw id. Caught by actually
+loading the real frontend page, not by typecheck or the earlier service-layer test script.
+
+**Also added**: `unassigned` filter on `GET /conversations` (a conversation has no direct
+advisor-assignment status of its own — assignment lives on the student — so this couldn't reuse
+`StudentStatus.AWAITING_ASSIGNMENT` the way the Students list does). Fixed a related latent bug
+in `ConversationsRepo.listConversations` while adding it: the `where` clause built `student: {...}`
+as two separate spread keys (advisor filter, search filter) — the second would have silently
+overwritten the first if both were ever used together. Now built as one combined sub-filter.
+
+**Frontend wiring** (`lanr-agents-frontend`, its own uncommitted work-in-progress — not committed
+here either): `src/features/conversations/` and `src/features/students/` (new — API client +
+React Query hooks, following the existing `features/programs` pattern). Rewrote
+`ConversationsPage.tsx`, `ConversationDetailPage.tsx`, `StudentsPage.tsx` against the real API:
+real stat cards, real status/advisor filters and pagination, real message history with
+STUDENT/AGENT/ADVISOR bubble styling, working reply box, Escalate/Hand back to AI/Mark resolved
+buttons (role- and state-gated), advisor-assignment dropdown (ADMIN-only in the UI, matching the
+backend gate). Removed the "AI summary" and "extracted filters" UI blocks — the original mock
+design assumed AI features that don't exist in the backend yet (see deferred list above); showing
+fabricated static text for them would've been misleading. Verified live in-browser against the
+maintainer's real Telegram-tested conversation (`CON-3854`) — real message history rendered
+correctly including the real advisor reply from the earlier service-layer test, and the resolved
+state correctly hides the reply box and shows a "this conversation is resolved" notice instead.
+
+Typecheck clean on both repos. Nothing committed yet (backend or frontend).

@@ -91,6 +91,13 @@ class TeamRepo {
     })
   }
 
+  static async findUsersByIds(ids: string[]) {
+    return prisma.users.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, public_id: true, full_name: true },
+    })
+  }
+
   static async updateUser(id: string, data: UpdateTeamMemberData) {
     return prisma.users.update({
       where: { id },
