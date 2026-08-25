@@ -7,12 +7,19 @@ import { MessageSenderType } from '../../generated/prisma/index.js'
 import { STUDY_ABROAD_SYSTEM_PROMPT } from './ai.prompts.js'
 import { createError } from '../../common/errors/AppError.js'
 
+const formatIntakesForPrompt = (intakes: { month: string; year: number; applicationDeadline: Date | null }[]) => {
+  if (intakes.length === 0) return 'intake dates not listed'
+  return intakes
+    .map((i) => `${i.month} ${i.year}${i.applicationDeadline ? ` (apply by ${i.applicationDeadline.toDateString()})` : ''}`)
+    .join(', ')
+}
+
 const formatMatchesForPrompt = (matches: Awaited<ReturnType<typeof MatchingService.FindMatchesForStudent>>) => {
   if (matches.length === 0) return 'No shortlist available yet — not enough profile info to match programs.'
   return matches
     .map(
       (m) =>
-        `- ${m.name} (${m.qualification}) at ${m.school.name}, ${m.school.city}, ${m.school.country} — ${m.tuitionCurrency} ${m.tuitionAmount}`,
+        `- ${m.name} (${m.qualification}) at ${m.school.name}, ${m.school.city}, ${m.school.country} — ${m.tuitionCurrency} ${m.tuitionAmount} — intakes: ${formatIntakesForPrompt(m.intakes)}`,
     )
     .join('\n')
 }

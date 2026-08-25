@@ -1,5 +1,11 @@
 import type { IntakeMonth, StudyLevel } from '../../generated/prisma/index.js'
 
+export interface ProgramIntakeDTO {
+  month: IntakeMonth
+  year: number
+  applicationDeadline?: Date | null
+}
+
 export interface CreateProgramDTO {
   name: string
   studyLevel: StudyLevel
@@ -10,9 +16,7 @@ export interface CreateProgramDTO {
   tuitionAmount: number
   tuitionCurrency: string
   scholarshipAvailability?: string | null
-  intakePeriods?: IntakeMonth[]
-  applicationDeadline?: Date | null
-  primaryIntakeYear?: number | null
+  intakes?: ProgramIntakeDTO[]
   academicRequirements?: string | null
   englishRequirements?: string | null
   operationNotes?: string | null
@@ -28,9 +32,7 @@ export interface UpdateProgramDTO {
   tuitionAmount?: number
   tuitionCurrency?: string
   scholarshipAvailability?: string | null
-  intakePeriods?: IntakeMonth[]
-  applicationDeadline?: Date | null
-  primaryIntakeYear?: number | null
+  intakes?: ProgramIntakeDTO[]
   academicRequirements?: string | null
   englishRequirements?: string | null
   operationNotes?: string | null

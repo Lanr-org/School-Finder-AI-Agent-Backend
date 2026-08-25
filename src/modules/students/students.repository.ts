@@ -44,7 +44,8 @@ export class StudentsRepo {
       data: {
         ...(data.studyLevel !== undefined && { study_level: data.studyLevel }),
         ...(data.targetDestinations !== undefined && { target_destinations: data.targetDestinations }),
-        ...(data.targetIntake !== undefined && { target_intake: data.targetIntake }),
+        ...(data.targetIntakeMonth !== undefined && { target_intake_month: data.targetIntakeMonth }),
+        ...(data.targetIntakeYear !== undefined && { target_intake_year: data.targetIntakeYear }),
         ...(data.budgetRange !== undefined && { budget_range: data.budgetRange }),
         ...(data.academicBackground !== undefined && { academic_background: data.academicBackground }),
         ...(data.englishTestScore !== undefined && { english_test_score: data.englishTestScore }),

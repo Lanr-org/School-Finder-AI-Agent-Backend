@@ -2,11 +2,12 @@ import { createError } from '../../common/errors/AppError'
 import { createPublicProgramId, withUniquePublicId } from '../../common/security/publicId'
 import { SchoolsRepo } from '../schools/schools.repository'
 import { ProgramsRepo } from './programs.repository'
-import type { Programs } from '../../generated/prisma/index.js'
+import type { Programs, ProgramIntakes } from '../../generated/prisma/index.js'
 import type { CreateProgramDTO, ListProgramsQueryDTO, UpdateProgramDTO } from './programs.types'
 
 type ProgramWithSchool = Programs & {
   school: { public_id: string; name: string }
+  intakes: ProgramIntakes[]
 }
 
 const toProgramResponse = (program: ProgramWithSchool) => ({
@@ -22,9 +23,11 @@ const toProgramResponse = (program: ProgramWithSchool) => ({
   tuitionCurrency: program.tuition_currency,
   scholarshipAvailability: program.scholarship_availability,
 
-  intakePeriods: program.intake_periods,
-  applicationDeadline: program.application_deadline,
-  primaryIntakeYear: program.primary_intake_year,
+  intakes: program.intakes.map((intake) => ({
+    month: intake.month,
+    year: intake.year,
+    applicationDeadline: intake.application_deadline,
+  })),
 
   academicRequirements: program.academic_requirements,
   englishRequirements: program.english_requirements,

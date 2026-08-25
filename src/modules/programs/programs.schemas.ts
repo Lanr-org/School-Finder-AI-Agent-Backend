@@ -23,6 +23,12 @@ const schoolIdSchema = z
   .trim()
   .regex(/^SCH-\d{4}$/, 'Must be a valid school ID (e.g. SCH-1234)')
 
+const programIntakeSchema = z.object({
+  month: intakeMonthEnum,
+  year: z.number().int().min(2000).max(2100),
+  applicationDeadline: z.coerce.date().nullable().optional(),
+})
+
 export class ProgramsSchemas {
   static programIdParamsSchema = z.object({
     programId: z
@@ -43,9 +49,7 @@ export class ProgramsSchemas {
     tuitionCurrency: z.string().trim().length(3, 'Must be a 3-letter ISO currency code').toUpperCase(),
     scholarshipAvailability: z.string().trim().max(100).nullable().optional(),
 
-    intakePeriods: z.array(intakeMonthEnum).optional(),
-    applicationDeadline: z.coerce.date().nullable().optional(),
-    primaryIntakeYear: z.number().int().min(2000).max(2100).nullable().optional(),
+    intakes: z.array(programIntakeSchema).optional(),
 
     academicRequirements: z.string().trim().max(5000).nullable().optional(),
     englishRequirements: z.string().trim().max(5000).nullable().optional(),

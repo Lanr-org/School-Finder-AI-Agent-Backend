@@ -2,10 +2,33 @@ import { InlineKeyboard } from 'grammy'
 import { logger } from '../../../config/logger.js'
 import { TelegramOutboundService } from '../services/telegram-outbound.service.js'
 import { StudentsService } from '../../../modules/students/students.service.js'
+import { IntakeMonth } from '../../../generated/prisma/index.js'
 
 export interface ParsedCallbackQuery {
   action: string
   value: string
+}
+
+// Calendar-month index (0-11) for the two intakes schools commonly offer. Extend here if a
+// school with a different intake cycle needs representing.
+const OFFERED_INTAKE_MONTHS: { month: IntakeMonth; calendarIndex: number; label: string }[] = [
+  { month: IntakeMonth.SEPTEMBER, calendarIndex: 8, label: 'September' },
+  { month: IntakeMonth.JANUARY, calendarIndex: 0, label: 'January' },
+]
+
+/**
+ * Computes the next upcoming occurrence of each offered intake month/year relative to now,
+ * so the bot never shows a stale year and never needs a redeploy to roll forward.
+ */
+const getUpcomingIntakeOptions = (referenceDate: Date = new Date()) => {
+  const currentMonth = referenceDate.getMonth()
+  const currentYear = referenceDate.getFullYear()
+
+  return OFFERED_INTAKE_MONTHS.map(({ month, calendarIndex, label }) => ({
+    month,
+    year: currentMonth <= calendarIndex ? currentYear : currentYear + 1,
+    label,
+  })).sort((a, b) => a.year - b.year || OFFERED_INTAKE_MONTHS.findIndex((m) => m.month === a.month) - OFFERED_INTAKE_MONTHS.findIndex((m) => m.month === b.month))
 }
 
 export class TelegramCallbackQueryHandler {
@@ -72,9 +95,10 @@ export class TelegramCallbackQueryHandler {
           })
         }
 
-        const intakeKeyboard = new InlineKeyboard()
-          .text('🍂 Fall 2026', 'SELECT_INTAKE:FALL_2026')
-          .text('🌸 Spring 2027', 'SELECT_INTAKE:SPRING_2027')
+        const intakeKeyboard = getUpcomingIntakeOptions().reduce(
+          (keyboard, option) => keyboard.text(`📅 ${option.label} ${option.year}`, `SELECT_INTAKE:${option.month}_${option.year}`),
+          new InlineKeyboard()
+        )
 
         await TelegramOutboundService.sendMessage(
           chatId,
@@ -85,9 +109,15 @@ export class TelegramCallbackQueryHandler {
 
       case 'SELECT_INTAKE':
         if (studentId) {
-          await StudentsService.updateStudentPreferences(studentId, {
-            targetIntake: parsed.value.replace('_', ' '),
-          })
+          const [month, yearRaw] = parsed.value.split('_')
+          const year = Number(yearRaw)
+
+          if (month && Number.isFinite(year)) {
+            await StudentsService.updateStudentPreferences(studentId, {
+              targetIntakeMonth: month as IntakeMonth,
+              targetIntakeYear: year,
+            })
+          }
         }
 
         await TelegramOutboundService.sendMessage(

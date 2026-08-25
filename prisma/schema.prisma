@@ -189,7 +189,8 @@ model Student {
 
   study_level         String?       @db.VarChar(50)
   target_destinations String[]
-  target_intake       String?       @db.VarChar(50)
+  target_intake_month IntakeMonth?
+  target_intake_year  Int?
   budget_range        String?       @db.VarChar(100)
   academic_background String?       @db.Text
   english_test_score  String?       @db.VarChar(100)
@@ -348,9 +349,7 @@ model Programs {
   scholarship_availability String? @db.VarChar(100) // e.g. "Full", "10%", "25%", "None"
 
   // Intakes & deadlines
-  intake_periods       IntakeMonth[]
-  application_deadline DateTime?
-  primary_intake_year  Int?
+  intakes ProgramIntakes[]
 
   // Entry requirements
   academic_requirements String? @db.Text
@@ -366,4 +365,18 @@ model Programs {
   @@index([study_level])
   @@index([category])
   @@map("programs")
+}
+
+model ProgramIntakes {
+  id                   String      @id @default(uuid()) @db.Uuid
+  program_id           String      @db.Uuid
+  month                IntakeMonth
+  year                 Int
+  application_deadline DateTime?
+
+  program Programs @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@unique([program_id, month, year])
+  @@index([program_id])
+  @@map("program_intakes")
 }

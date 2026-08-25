@@ -3,7 +3,7 @@ import type { Prisma } from '../../generated/prisma/index.js'
 import type { CreateProgramDTO, ListProgramsFilters, UpdateProgramDTO } from './programs.types.js'
 
 const withSchool = {
-  include: { school: { select: { public_id: true, name: true } } },
+  include: { school: { select: { public_id: true, name: true } }, intakes: true },
 } as const
 
 export class ProgramsRepo {
@@ -23,9 +23,13 @@ export class ProgramsRepo {
         tuition_currency: data.tuitionCurrency,
         scholarship_availability: data.scholarshipAvailability ?? null,
 
-        intake_periods: data.intakePeriods ?? [],
-        application_deadline: data.applicationDeadline ?? null,
-        primary_intake_year: data.primaryIntakeYear ?? null,
+        intakes: {
+          create: (data.intakes ?? []).map((intake) => ({
+            month: intake.month,
+            year: intake.year,
+            application_deadline: intake.applicationDeadline ?? null,
+          })),
+        },
 
         academic_requirements: data.academicRequirements ?? null,
         english_requirements: data.englishRequirements ?? null,
@@ -80,9 +84,16 @@ export class ProgramsRepo {
           scholarship_availability: data.scholarshipAvailability,
         }),
 
-        ...(data.intakePeriods !== undefined && { intake_periods: data.intakePeriods }),
-        ...(data.applicationDeadline !== undefined && { application_deadline: data.applicationDeadline }),
-        ...(data.primaryIntakeYear !== undefined && { primary_intake_year: data.primaryIntakeYear }),
+        ...(data.intakes !== undefined && {
+          intakes: {
+            deleteMany: {},
+            create: data.intakes.map((intake) => ({
+              month: intake.month,
+              year: intake.year,
+              application_deadline: intake.applicationDeadline ?? null,
+            })),
+          },
+        }),
 
         ...(data.academicRequirements !== undefined && { academic_requirements: data.academicRequirements }),
         ...(data.englishRequirements !== undefined && { english_requirements: data.englishRequirements }),

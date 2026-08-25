@@ -1,3 +1,9 @@
+export interface ProgramMatchIntake {
+  month: string
+  year: number
+  applicationDeadline: Date | null
+}
+
 export interface ProgramMatch {
   publicId: string
   name: string
@@ -6,6 +12,7 @@ export interface ProgramMatch {
   category: string
   tuitionAmount: number
   tuitionCurrency: string
+  intakes: ProgramMatchIntake[]
   school: {
     publicId: string
     name: string

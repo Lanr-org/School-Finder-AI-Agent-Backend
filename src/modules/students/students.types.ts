@@ -1,9 +1,10 @@
-import { StudentStatus } from '../../generated/prisma/index.js'
+import { IntakeMonth, StudentStatus } from '../../generated/prisma/index.js'
 
 export interface UpdateStudentPreferencesDTO {
   studyLevel?: string | undefined
   targetDestinations?: string[] | undefined
-  targetIntake?: string | undefined
+  targetIntakeMonth?: IntakeMonth | undefined
+  targetIntakeYear?: number | undefined
   budgetRange?: string | undefined
   academicBackground?: string | undefined
   englishTestScore?: string | undefined

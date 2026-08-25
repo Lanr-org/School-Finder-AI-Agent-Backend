@@ -135,22 +135,28 @@ const makeProgram = (overrides: Record<string, unknown> = {}) => ({
   tuition_currency: 'CAD',
   scholarship_availability: '10%' as string | null,
 
-  intake_periods: ['SEPTEMBER', 'JANUARY'] as (
-    | 'JANUARY'
-    | 'FEBRUARY'
-    | 'MARCH'
-    | 'APRIL'
-    | 'MAY'
-    | 'JUNE'
-    | 'JULY'
-    | 'AUGUST'
-    | 'SEPTEMBER'
-    | 'OCTOBER'
-    | 'NOVEMBER'
-    | 'DECEMBER'
-  )[],
-  application_deadline: new Date('2026-01-15'),
-  primary_intake_year: 2026 as number | null,
+  intakes: [
+    { id: 'intake-uuid-0001', program_id: 'program-uuid-0001', month: 'SEPTEMBER', year: 2026, application_deadline: new Date('2026-01-15') },
+    { id: 'intake-uuid-0002', program_id: 'program-uuid-0001', month: 'JANUARY', year: 2027, application_deadline: new Date('2026-10-01') },
+  ] as {
+    id: string
+    program_id: string
+    month:
+      | 'JANUARY'
+      | 'FEBRUARY'
+      | 'MARCH'
+      | 'APRIL'
+      | 'MAY'
+      | 'JUNE'
+      | 'JULY'
+      | 'AUGUST'
+      | 'SEPTEMBER'
+      | 'OCTOBER'
+      | 'NOVEMBER'
+      | 'DECEMBER'
+    year: number
+    application_deadline: Date | null
+  }[],
 
   academic_requirements: "Bachelor's degree with 3.0 GPA" as string | null,
   english_requirements: 'IELTS 6.5 overall' as string | null,

@@ -20,6 +20,17 @@ const normalizeStudyLevel = (raw: string | null): StudyLevel | undefined => {
   return match?.[0]
 }
 
+// Maps abbreviations used by the Telegram destination buttons (e.g. "UK") to the full country
+// names stored on Schools.country. Anything not listed here passes through as-is and is matched
+// case-insensitively by the repo query, which covers plain casing differences on its own.
+const COUNTRY_ALIASES: Record<string, string> = {
+  UK: 'United Kingdom',
+  USA: 'United States',
+  US: 'United States',
+}
+
+const normalizeCountry = (raw: string): string => COUNTRY_ALIASES[raw.toUpperCase()] ?? raw
+
 export class MatchingService {
   static FindMatchesForStudent = async (studentPublicId: string, limit = 10): Promise<ProgramMatch[]> => {
     const student = await StudentsRepo.findStudentByPublicId(studentPublicId)
@@ -29,9 +40,16 @@ export class MatchingService {
     }
 
     const studyLevel = normalizeStudyLevel(student.study_level)
-    const countries = student.target_destinations.length > 0 ? student.target_destinations : undefined
+    const countries =
+      student.target_destinations.length > 0 ? student.target_destinations.map(normalizeCountry) : undefined
 
-    const programs = await MatchingRepo.findMatchingPrograms({ studyLevel, countries, limit })
+    const programs = await MatchingRepo.findMatchingPrograms({
+      studyLevel,
+      countries,
+      intakeMonth: student.target_intake_month ?? undefined,
+      intakeYear: student.target_intake_year ?? undefined,
+      limit,
+    })
 
     return programs.map((program) => ({
       publicId: program.public_id,
@@ -41,6 +59,11 @@ export class MatchingService {
       category: program.category,
       tuitionAmount: Number(program.tuition_amount),
       tuitionCurrency: program.tuition_currency,
+      intakes: program.intakes.map((intake) => ({
+        month: intake.month,
+        year: intake.year,
+        applicationDeadline: intake.application_deadline,
+      })),
       school: {
         publicId: program.school.public_id,
         name: program.school.name,
