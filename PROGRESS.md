@@ -555,4 +555,42 @@ maintainer's real Telegram-tested conversation (`CON-3854`) — real message his
 correctly including the real advisor reply from the earlier service-layer test, and the resolved
 state correctly hides the reply box and shows a "this conversation is resolved" notice instead.
 
-Typecheck clean on both repos. Nothing committed yet (backend or frontend).
+Typecheck clean on both repos. Committed as `620d8ae` (backend) and `64a7317` (frontend, which was
+also the first commit of the pre-existing auth/schools/programs/team API wiring — none of that had
+been committed before either).
+
+## Step 6 — Regression tests for the AI/matching/escalation pipeline (2026-08-25)
+
+Before this, Steps 1-5 (matching, LLM client, AI orchestration, Telegram worker wiring, escalation)
+had **zero automated test coverage** — every verification was either a live Telegram round-trip or
+a throwaway Node script run once against real data and deleted. Auth/team/schools/programs already
+had solid Vitest+Supertest suites; the newest and most business-critical part of the system had
+none. Concretely: the country-matching bug and the advisor-UUID bug from Step 5 were both the kind
+of thing a real test would have caught structurally instead of needing to be spotted by eye.
+
+Scoped to backend regression tests only (frontend E2E considered and explicitly deferred — separate
+tool, separate repo). New files, following the existing mocked-repo convention (no live test DB):
+
+- `tests/matching.service.test.ts` — study-level keyword normalization, the `COUNTRY_ALIASES` map
+  (`UK`→`United Kingdom` etc.), intake month/year filter pass-through, full `ProgramMatch` mapping
+  including nested intakes.
+- `tests/ai-reply.service.test.ts` — persists the student message before anything else, 404s
+  without calling the LLM when the student doesn't exist, maps `STUDENT`→`user` / everything else→
+  `assistant` in conversation history, includes real intake months/deadlines in the system prompt,
+  falls back to "No shortlist available yet" when matching returns nothing, persists the AI reply
+  as an `AGENT` message.
+- `tests/students.http.test.ts` / `tests/conversations.http.test.ts` — the ADVISOR-ownership 403
+  (and that ADMIN bypasses it), the advisor-assignment endpoint being ADMIN-only, escalate/resolve/
+  handback state transitions (including the handback 409 when already `AI_BOT`), the reply endpoint
+  persisting an `ADVISOR` message and actually calling `TelegramOutboundService.sendMessage`, and
+  that an ADVISOR's `advisorId`/`unassigned` query params get overridden/ignored server-side rather
+  than trusted from the client.
+
+Also fixed one pre-existing test (`students-contacts.unit.test.ts`) that asserted the literal text
+of a plain `Error` thrown by `StudentsService.getStudentById` — that error became a proper 404
+`AppError` earlier this session when the method was first exposed over HTTP; the test just hadn't
+been updated to match.
+
+Result: 238/238 tests passing across 11 files, typecheck clean. (`npm run lint` fails, but on
+`scripts/import-programs.mjs` — a pre-existing file from commit `7bd5aed`, untouched this session;
+a pre-existing ESLint typed-linting config gap, not a regression from this work.)

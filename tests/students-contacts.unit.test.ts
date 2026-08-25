@@ -101,12 +101,14 @@ describe('ContactsService & StudentsService Unit Tests', () => {
       expect(result).toBeDefined()
     })
 
-    it('should throw an error if getStudentById cannot find the student', async () => {
+    it('should throw a 404 NOT_FOUND error if getStudentById cannot find the student', async () => {
       vi.spyOn(StudentsRepo, 'findStudentById').mockResolvedValue(null)
 
-      await expect(StudentsService.getStudentById('non-existent-id')).rejects.toThrow(
-        'Student profile not found'
-      )
+      await expect(StudentsService.getStudentById('non-existent-id')).rejects.toMatchObject({
+        message: 'Student not found',
+        statusCode: 404,
+        code: 'NOT_FOUND',
+      })
     })
   })
 })
