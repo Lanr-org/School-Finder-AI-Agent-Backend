@@ -23,8 +23,6 @@ const seedEnvironmentSchema = z.object({
 
 const seedEnvironment = seedEnvironmentSchema.safeParse(process.env)
 
-console.log(process.env)
-
 if (!seedEnvironment.success) {
   console.error('Invalid seed environment:')
   console.error(z.prettifyError(seedEnvironment.error))
@@ -39,7 +37,7 @@ function createPublicUserId(): string {
   return `USR-${randomBytes(6).toString('hex').toUpperCase()}`
 }
 
-const main = async (): Promise<void> => {
+const seedBootstrapAdmin = async (): Promise<void> => {
   const userWithSeedEmail = await prisma.users.findUnique({
     where: { email: config.SEED_ADMIN_EMAIL },
     select: { email: true, role: true, status: true },
@@ -91,6 +89,94 @@ const main = async (): Promise<void> => {
   })
 
   console.log(`Bootstrap admin created: ${admin.email} (${admin.public_id})`)
+}
+
+type SettingGroupSeed = {
+  key: string
+  label: string
+  values: string[]
+}
+
+// Groups are fixed/seeded, not creatable via the API — only their values are
+// admin-manageable. "study-levels" is intentionally distinct from the
+// Programs.study_level enum (UNDERGRADUATE/POSTGRADUATE/DOCTORATE/FOUNDATION);
+// this list is a separate, free-text-facing categorization.
+const SETTING_GROUPS: SettingGroupSeed[] = [
+  {
+    key: 'countries',
+    label: 'Destination Countries',
+    values: [
+      'United Kingdom',
+      'Canada',
+      'United States',
+      'Australia',
+      'Ireland',
+      'Germany',
+    ],
+  },
+  {
+    key: 'categories',
+    label: 'Program Categories',
+    values: [
+      'Business',
+      'Computer Science',
+      'Engineering',
+      'Data and Business Intelligence',
+    ],
+  },
+  {
+    key: 'study-levels',
+    label: 'Study Levels',
+    values: [
+      'Certificate',
+      'Diploma',
+      'Undergraduate',
+      'Postgraduate',
+      'Masters',
+      'Doctorate',
+    ],
+  },
+]
+
+function slugify(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+const seedSettingGroups = async (): Promise<void> => {
+  for (const groupSeed of SETTING_GROUPS) {
+    let group = await prisma.settingGroup.findUnique({
+      where: { key: groupSeed.key },
+    })
+
+    if (!group) {
+      group = await prisma.settingGroup.create({
+        data: { key: groupSeed.key, label: groupSeed.label },
+      })
+      console.log(`Setting group created: ${group.key}`)
+    }
+
+    const { count } = await prisma.settingValue.createMany({
+      data: groupSeed.values.map((label) => ({
+        group_id: group.id,
+        key: slugify(label),
+        label,
+      })),
+      skipDuplicates: true,
+    })
+
+    if (count > 0) {
+      console.log(`Setting values seeded for "${groupSeed.key}": ${count}`)
+    }
+  }
+}
+
+const main = async (): Promise<void> => {
+  await seedBootstrapAdmin()
+  await seedSettingGroups()
 }
 
 main()
