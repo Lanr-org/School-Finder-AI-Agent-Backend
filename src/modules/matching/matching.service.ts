@@ -14,9 +14,9 @@ const STUDY_LEVEL_KEYWORDS: Record<StudyLevel, string[]> = {
 const normalizeStudyLevel = (raw: string | null): StudyLevel | undefined => {
   if (!raw) return undefined
   const lower = raw.toLowerCase()
-  const match = (Object.entries(STUDY_LEVEL_KEYWORDS) as [StudyLevel, string[]][]).find(([, keywords]) =>
-    keywords.some((kw) => lower.includes(kw)),
-  )
+  const match = (
+    Object.entries(STUDY_LEVEL_KEYWORDS) as [StudyLevel, string[]][]
+  ).find(([, keywords]) => keywords.some((kw) => lower.includes(kw)))
   return match?.[0]
 }
 
@@ -29,10 +29,14 @@ const COUNTRY_ALIASES: Record<string, string> = {
   US: 'United States',
 }
 
-const normalizeCountry = (raw: string): string => COUNTRY_ALIASES[raw.toUpperCase()] ?? raw
+export const normalizeCountry = (raw: string): string =>
+  COUNTRY_ALIASES[raw.toUpperCase()] ?? raw
 
 export class MatchingService {
-  static FindMatchesForStudent = async (studentPublicId: string, limit = 10): Promise<ProgramMatch[]> => {
+  static FindMatchesForStudent = async (
+    studentPublicId: string,
+    limit = 10,
+  ): Promise<ProgramMatch[]> => {
     const student = await StudentsRepo.findStudentByPublicId(studentPublicId)
 
     if (!student) {
@@ -41,7 +45,9 @@ export class MatchingService {
 
     const studyLevel = normalizeStudyLevel(student.study_level)
     const countries =
-      student.target_destinations.length > 0 ? student.target_destinations.map(normalizeCountry) : undefined
+      student.target_destinations.length > 0
+        ? student.target_destinations.map(normalizeCountry)
+        : undefined
 
     const programs = await MatchingRepo.findMatchingPrograms({
       studyLevel,

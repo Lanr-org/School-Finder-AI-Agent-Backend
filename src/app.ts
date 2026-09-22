@@ -15,6 +15,8 @@ import { programsRouter } from './modules/programs/programs.routes'
 import { studentsRouter } from './modules/students/students.routes'
 import { advisorsRouter } from './modules/advisors/advisors.routes'
 import { settingsRouter } from './modules/settings/settings.routes'
+import { bulletinsRouter } from './modules/bulletins/bulletins.routes'
+import { visaRatesRouter } from './modules/visaRates/visaRates.routes'
 import { conversationsRouter } from './modules/conversations/conversations.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
@@ -41,6 +43,8 @@ app.use(`${version}/programs`, programsRouter)
 app.use(`${version}/students`, studentsRouter)
 app.use(`${version}/advisors`, advisorsRouter)
 app.use(`${version}/settings`, settingsRouter)
+app.use(`${version}/bulletins`, bulletinsRouter)
+app.use(`${version}/visa-success-rates`, visaRatesRouter)
 app.use(`${version}/conversations`, conversationsRouter)
 
 // Webhook routes

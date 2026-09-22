@@ -51,6 +51,8 @@ model Users {
   advisor_profile      AdvisorProfile?
   authored_notes       StudentNote[]
   authored_follow_ups  FollowUp[]
+  authored_bulletins   IndustryBulletin[]
+  authored_visa_rates  VisaSuccessRate[]
 
   @@map("users")
 }
@@ -505,4 +507,51 @@ model SettingValue {
   @@unique([group_id, key])
   @@index([group_id, is_active])
   @@map("setting_values")
+}
+
+// ==========================================
+// MODELS FOR INDUSTRY INTEL (partner data -> AI grounding)
+// ==========================================
+
+// Ops/admin-entered content. Unlike SettingValue, these are not shared lookup
+// values other records reference, so DELETE is a direct hard delete —
+// is_active exists purely as a fast retract-without-losing-history toggle.
+model IndustryBulletin {
+  id             String    @id @default(uuid()) @db.Uuid
+  public_id      String    @unique @db.VarChar(24)
+  title          String    @db.VarChar(200)
+  body           String    @db.Text
+  source_partner String?   @db.VarChar(120)
+  countries      String[] // empty array = applies globally
+  published_at   DateTime  @db.Timestamptz(6)
+  expires_at     DateTime? @db.Timestamptz(6) // null = doesn't expire
+  is_active      Boolean   @default(true)
+  created_by     String    @db.Uuid
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  creator Users @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@index([is_active, expires_at])
+  @@map("industry_bulletins")
+}
+
+model VisaSuccessRate {
+  id             String   @id @default(uuid()) @db.Uuid
+  public_id      String   @unique @db.VarChar(24)
+  country        String   @db.VarChar(120)
+  source_partner String?  @db.VarChar(120)
+  period_label   String   @db.VarChar(60) // free text, e.g. "Q3 2026"
+  success_rate   Decimal  @db.Decimal(5, 2) // 0-100, bounded at the Zod layer (see AGENTS.md precedent: Schools.visa_friendliness_score)
+  sample_size    Int?
+  published_at   DateTime @db.Timestamptz(6)
+  is_active      Boolean  @default(true)
+  created_by     String   @db.Uuid
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  creator Users @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@index([country, is_active, published_at(sort: Desc)])
+  @@map("visa_success_rates")
 }

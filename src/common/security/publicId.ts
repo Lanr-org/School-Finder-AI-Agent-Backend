@@ -30,6 +30,16 @@ export const createPublicFollowUpId = (): string => {
   return `FUP-${randomNum}`
 }
 
+export const createPublicBulletinId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `BUL-${randomNum}`
+}
+
+export const createPublicVisaRateId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `VSR-${randomNum}`
+}
+
 const isPublicIdConflict = (error: unknown): boolean => {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
