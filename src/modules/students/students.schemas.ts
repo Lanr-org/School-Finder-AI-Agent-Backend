@@ -16,7 +16,10 @@ const studentStatusEnum = z.enum([
 const advisorIdSchema = z
   .string()
   .trim()
-  .regex(/^USR-[A-F0-9]{12}$/, 'Must be a valid advisor ID (e.g. USR-1A2B3C4D5E6F)')
+  .regex(
+    /^USR-[A-F0-9]{12}$/,
+    'Must be a valid advisor ID (e.g. USR-1A2B3C4D5E6F)',
+  )
 
 export class StudentsSchemas {
   static studentIdParamsSchema = z.object({
@@ -36,5 +39,9 @@ export class StudentsSchemas {
 
   static assignAdvisorSchema = z.object({
     advisorId: advisorIdSchema.nullable(),
+  })
+
+  static updateStatusSchema = z.object({
+    status: studentStatusEnum,
   })
 }

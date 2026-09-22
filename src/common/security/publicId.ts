@@ -20,6 +20,16 @@ export const createPublicConversationId = (): string => {
   return `CON-${randomNum}`
 }
 
+export const createPublicNoteId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `NOTE-${randomNum}`
+}
+
+export const createPublicFollowUpId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `FUP-${randomNum}`
+}
+
 const isPublicIdConflict = (error: unknown): boolean => {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&

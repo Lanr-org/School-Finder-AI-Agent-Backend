@@ -6,6 +6,7 @@ import { generateAcessToken } from '../src/common/security/token'
 import AuthRepo from '../src/modules/auth/auth.repository'
 import { StudentsRepo } from '../src/modules/students/students.repository'
 import TeamRepo from '../src/modules/team/team.repository'
+import { AdvisorsRepo } from '../src/modules/advisors/advisors.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ vi.mock('../src/modules/students/students.repository', () => ({
     listStudents: vi.fn(),
     assignAdvisorToStudent: vi.fn(),
     unassignAdvisorFromStudent: vi.fn(),
+    updateStudentStatus: vi.fn(),
   },
 }))
 
@@ -29,6 +31,13 @@ vi.mock('../src/modules/team/team.repository', () => ({
   default: {
     findUserByPublicId: vi.fn(),
     findUsersByIds: vi.fn(),
+  },
+}))
+
+vi.mock('../src/modules/advisors/advisors.repository', () => ({
+  AdvisorsRepo: {
+    findProfileByUserId: vi.fn(),
+    countActiveStudentsForAdvisor: vi.fn(),
   },
 }))
 
@@ -48,6 +57,7 @@ function body<T = unknown>(res: { body: unknown }): ApiBody<T> {
 const authRepoMock = vi.mocked(AuthRepo)
 const studentsRepoMock = vi.mocked(StudentsRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
+const advisorsRepoMock = vi.mocked(AdvisorsRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -122,14 +132,22 @@ const token = (role: 'ADMIN' | 'ADVISOR' | 'OPERATIONS', id = ADMIN_ID) =>
   generateAcessToken(id, SESSION_ID, role, 0)
 
 const asAdmin = () => {
-  authRepoMock.findUser.mockResolvedValue(makeUser({ id: ADMIN_ID, role: 'ADMIN' }) as any)
-  authRepoMock.findAuthSessionById.mockResolvedValue(makeSession({ user_id: ADMIN_ID }) as any)
+  authRepoMock.findUser.mockResolvedValue(
+    makeUser({ id: ADMIN_ID, role: 'ADMIN' }) as any,
+  )
+  authRepoMock.findAuthSessionById.mockResolvedValue(
+    makeSession({ user_id: ADMIN_ID }) as any,
+  )
   return token('ADMIN', ADMIN_ID)
 }
 
 const asAdvisor = (id = ADVISOR_ID) => {
-  authRepoMock.findUser.mockResolvedValue(makeUser({ id, role: 'ADVISOR' }) as any)
-  authRepoMock.findAuthSessionById.mockResolvedValue(makeSession({ user_id: id }) as any)
+  authRepoMock.findUser.mockResolvedValue(
+    makeUser({ id, role: 'ADVISOR' }) as any,
+  )
+  authRepoMock.findAuthSessionById.mockResolvedValue(
+    makeSession({ user_id: id }) as any,
+  )
   return token('ADVISOR', id)
 }
 
@@ -143,9 +161,13 @@ describe('Students API — GET /api/v1/students/:studentId', () => {
 
   it('returns the student for an ADMIN', async () => {
     const authToken = asAdmin()
-    studentsRepoMock.findStudentByPublicId.mockResolvedValue(makeStudent() as any)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent() as any,
+    )
 
-    const res = await request(app).get('/api/v1/students/STU-8440').set('Authorization', `Bearer ${authToken}`)
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(200)
     expect(body<{ publicId: string }>(res).data.publicId).toBe('STU-8440')
@@ -153,18 +175,26 @@ describe('Students API — GET /api/v1/students/:studentId', () => {
 
   it('returns the student for the ADVISOR it is assigned to', async () => {
     const authToken = asAdvisor(ADVISOR_ID)
-    studentsRepoMock.findStudentByPublicId.mockResolvedValue(makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any,
+    )
 
-    const res = await request(app).get('/api/v1/students/STU-8440').set('Authorization', `Bearer ${authToken}`)
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(200)
   })
 
   it('returns 403 for an ADVISOR the student is not assigned to', async () => {
     const authToken = asAdvisor(OTHER_ADVISOR_ID)
-    studentsRepoMock.findStudentByPublicId.mockResolvedValue(makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any,
+    )
 
-    const res = await request(app).get('/api/v1/students/STU-8440').set('Authorization', `Bearer ${authToken}`)
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(403)
     expect(body(res).error?.code).toBe('FORBIDDEN')
@@ -174,7 +204,9 @@ describe('Students API — GET /api/v1/students/:studentId', () => {
     const authToken = asAdmin()
     studentsRepoMock.findStudentByPublicId.mockResolvedValue(null as any)
 
-    const res = await request(app).get('/api/v1/students/STU-9999').set('Authorization', `Bearer ${authToken}`)
+    const res = await request(app)
+      .get('/api/v1/students/STU-9999')
+      .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(404)
     expect(body(res).error?.code).toBe('NOT_FOUND')
@@ -186,11 +218,17 @@ describe('Students API — GET /api/v1/students/:studentId', () => {
   })
 
   it('returns 403 for an OPERATIONS user (route requires ADMIN or ADVISOR)', async () => {
-    authRepoMock.findUser.mockResolvedValue(makeUser({ id: 'ops-uuid', role: 'OPERATIONS' }) as any)
-    authRepoMock.findAuthSessionById.mockResolvedValue(makeSession({ user_id: 'ops-uuid' }) as any)
+    authRepoMock.findUser.mockResolvedValue(
+      makeUser({ id: 'ops-uuid', role: 'OPERATIONS' }) as any,
+    )
+    authRepoMock.findAuthSessionById.mockResolvedValue(
+      makeSession({ user_id: 'ops-uuid' }) as any,
+    )
     const authToken = token('OPERATIONS', 'ops-uuid')
 
-    const res = await request(app).get('/api/v1/students/STU-8440').set('Authorization', `Bearer ${authToken}`)
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(403)
   })
@@ -200,7 +238,10 @@ describe('Students API — GET /api/v1/students', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     teamRepoMock.findUsersByIds.mockResolvedValue([])
-    studentsRepoMock.listStudents.mockResolvedValue({ students: [makeStudent() as any], total: 1 })
+    studentsRepoMock.listStudents.mockResolvedValue({
+      students: [makeStudent() as any],
+      total: 1,
+    })
   })
 
   it('forces the advisorUserId filter to the caller for an ADVISOR, ignoring any advisorId query param', async () => {
@@ -219,7 +260,9 @@ describe('Students API — GET /api/v1/students', () => {
 
   it('resolves a public advisorId query param to an internal id for ADMIN', async () => {
     const authToken = asAdmin()
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any,
+    )
 
     const res = await request(app)
       .get('/api/v1/students?advisorId=USR-946B7F71768D')
@@ -236,7 +279,11 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     teamRepoMock.findUsersByIds.mockResolvedValue([])
-    studentsRepoMock.findStudentByPublicId.mockResolvedValue(makeStudent({ assigned_advisor_id: null }) as any)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: null }) as any,
+    )
+    // No advisor profile yet == unlimited capacity — matches existing pre-feature behavior.
+    advisorsRepoMock.findProfileByUserId.mockResolvedValue(null)
   })
 
   it('is forbidden for an ADVISOR (assign/reassign is ADMIN-only)', async () => {
@@ -253,9 +300,14 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
 
   it('assigns a valid advisor for ADMIN', async () => {
     const authToken = asAdmin()
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any,
+    )
     studentsRepoMock.assignAdvisorToStudent.mockResolvedValue(
-      makeStudent({ assigned_advisor_id: ADVISOR_ID, status: 'ASSIGNED' }) as any,
+      makeStudent({
+        assigned_advisor_id: ADVISOR_ID,
+        status: 'ASSIGNED',
+      }) as any,
     )
 
     const res = await request(app)
@@ -264,12 +316,17 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
       .send({ advisorId: 'USR-946B7F71768D' })
 
     expect(res.status).toBe(200)
-    expect(studentsRepoMock.assignAdvisorToStudent).toHaveBeenCalledWith('student-uuid-1', ADVISOR_ID)
+    expect(studentsRepoMock.assignAdvisorToStudent).toHaveBeenCalledWith(
+      'student-uuid-1',
+      ADVISOR_ID,
+    )
   })
 
   it('returns 404 when the target user is not an ADVISOR', async () => {
     const authToken = asAdmin()
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeUser({ id: 'ops-uuid', role: 'OPERATIONS' }) as any)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: 'ops-uuid', role: 'OPERATIONS' }) as any,
+    )
 
     const res = await request(app)
       .patch('/api/v1/students/STU-8440/advisor')
@@ -284,7 +341,10 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
   it('unassigns the advisor when advisorId is null', async () => {
     const authToken = asAdmin()
     studentsRepoMock.unassignAdvisorFromStudent.mockResolvedValue(
-      makeStudent({ assigned_advisor_id: null, status: 'AWAITING_ASSIGNMENT' }) as any,
+      makeStudent({
+        assigned_advisor_id: null,
+        status: 'AWAITING_ASSIGNMENT',
+      }) as any,
     )
 
     const res = await request(app)
@@ -293,8 +353,12 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
       .send({ advisorId: null })
 
     expect(res.status).toBe(200)
-    expect(studentsRepoMock.unassignAdvisorFromStudent).toHaveBeenCalledWith('student-uuid-1')
-    expect(body<{ assignedAdvisor: unknown }>(res).data.assignedAdvisor).toBeNull()
+    expect(studentsRepoMock.unassignAdvisorFromStudent).toHaveBeenCalledWith(
+      'student-uuid-1',
+    )
+    expect(
+      body<{ assignedAdvisor: unknown }>(res).data.assignedAdvisor,
+    ).toBeNull()
   })
 
   it('returns 400 for a malformed advisorId', async () => {
@@ -307,5 +371,136 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
 
     expect(res.status).toBe(400)
     expect(body(res).error?.code).toBe('VALIDATION_ERROR')
+  })
+
+  it('returns 409 when the advisor is already at their profile capacity', async () => {
+    const authToken = asAdmin()
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any,
+    )
+    advisorsRepoMock.findProfileByUserId.mockResolvedValue({
+      id: 'profile-uuid-1',
+      user_id: ADVISOR_ID,
+      availability: 'AVAILABLE',
+      max_capacity: 5,
+      created_at: new Date(),
+      updated_at: new Date(),
+    } as any)
+    advisorsRepoMock.countActiveStudentsForAdvisor.mockResolvedValue(5)
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/advisor')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ advisorId: 'USR-946B7F71768D' })
+
+    expect(res.status).toBe(409)
+    expect(body(res).error?.code).toBe('CONFLICT')
+    expect(studentsRepoMock.assignAdvisorToStudent).not.toHaveBeenCalled()
+  })
+
+  it('allows assignment when the advisor is under their profile capacity', async () => {
+    const authToken = asAdmin()
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: ADVISOR_ID, role: 'ADVISOR' }) as any,
+    )
+    advisorsRepoMock.findProfileByUserId.mockResolvedValue({
+      id: 'profile-uuid-1',
+      user_id: ADVISOR_ID,
+      availability: 'AVAILABLE',
+      max_capacity: 5,
+      created_at: new Date(),
+      updated_at: new Date(),
+    } as any)
+    advisorsRepoMock.countActiveStudentsForAdvisor.mockResolvedValue(4)
+    studentsRepoMock.assignAdvisorToStudent.mockResolvedValue(
+      makeStudent({
+        assigned_advisor_id: ADVISOR_ID,
+        status: 'ASSIGNED',
+      }) as any,
+    )
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/advisor')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ advisorId: 'USR-946B7F71768D' })
+
+    expect(res.status).toBe(200)
+    expect(studentsRepoMock.assignAdvisorToStudent).toHaveBeenCalledWith(
+      'student-uuid-1',
+      ADVISOR_ID,
+    )
+  })
+})
+
+describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    teamRepoMock.findUsersByIds.mockResolvedValue([])
+  })
+
+  it('updates status for the owning ADVISOR', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({
+        assigned_advisor_id: ADVISOR_ID,
+        status: 'ASSIGNED',
+      }) as any,
+    )
+    studentsRepoMock.updateStudentStatus.mockResolvedValue(
+      makeStudent({
+        assigned_advisor_id: ADVISOR_ID,
+        status: 'FOLLOW_UP',
+      }) as any,
+    )
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'FOLLOW_UP' })
+
+    expect(res.status).toBe(200)
+    expect(studentsRepoMock.updateStudentStatus).toHaveBeenCalledWith(
+      'student-uuid-1',
+      'FOLLOW_UP',
+    )
+    expect(body<{ status: string }>(res).data.status).toBe('FOLLOW_UP')
+  })
+
+  it('returns 403 for an ADVISOR the student is not assigned to', async () => {
+    const authToken = asAdvisor(OTHER_ADVISOR_ID)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any,
+    )
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'FOLLOW_UP' })
+
+    expect(res.status).toBe(403)
+    expect(studentsRepoMock.updateStudentStatus).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for an invalid status value', async () => {
+    const authToken = asAdmin()
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'NOT_A_REAL_STATUS' })
+
+    expect(res.status).toBe(400)
+    expect(body(res).error?.code).toBe('VALIDATION_ERROR')
+  })
+
+  it('returns 404 when the student does not exist', async () => {
+    const authToken = asAdmin()
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(null as any)
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-9999/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'COMPLETED' })
+
+    expect(res.status).toBe(404)
   })
 })

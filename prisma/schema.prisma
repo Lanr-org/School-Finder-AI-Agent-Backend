@@ -48,6 +48,10 @@ model Users {
   invitations_received Team_Invitations[] @relation("InvitationRecipient")
   invitations_sent     Team_Invitations[] @relation("InvitationSender")
 
+  advisor_profile      AdvisorProfile?
+  authored_notes       StudentNote[]
+  authored_follow_ups  FollowUp[]
+
   @@map("users")
 }
 
@@ -199,6 +203,8 @@ model Student {
 
   contact       Contacts        @relation(fields: [contact_id], references: [id], onDelete: Cascade)
   conversations Conversations[]
+  notes         StudentNote[]
+  follow_ups    FollowUp[]
 
   @@index([assigned_advisor_id])
   @@index([status, created_at(sort: Desc)])
@@ -379,4 +385,89 @@ model ProgramIntakes {
   @@unique([program_id, month, year])
   @@index([program_id])
   @@map("program_intakes")
+}
+
+// ==========================================
+// ENUMS FOR ADVISOR PROFILES, NOTES & FOLLOW-UPS
+// ==========================================
+
+enum AdvisorAvailability {
+  AVAILABLE
+  LIMITED
+  UNAVAILABLE
+}
+
+enum FollowUpPriority {
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// OVERDUE is API-response-only (derived at read time from a PENDING row whose
+// due_at has passed) — repositories only ever write PENDING, COMPLETED, or CANCELED.
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+  OVERDUE
+}
+
+// ==========================================
+// MODELS FOR ADVISOR PROFILES, NOTES & FOLLOW-UPS
+// ==========================================
+
+model AdvisorProfile {
+  id           String              @id @default(uuid()) @db.Uuid
+  user_id      String              @unique @db.Uuid
+  availability AdvisorAvailability @default(AVAILABLE)
+  max_capacity Int? // null = unlimited
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  user Users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("advisor_profiles")
+}
+
+model StudentNote {
+  id         String  @id @default(uuid()) @db.Uuid
+  public_id  String  @unique @db.VarChar(24)
+  student_id String  @db.Uuid
+  advisor_id String  @db.Uuid
+  body       String  @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at DateTime?
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  advisor Users   @relation(fields: [advisor_id], references: [id], onDelete: Restrict)
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("student_notes")
+}
+
+model FollowUp {
+  id          String           @id @default(uuid()) @db.Uuid
+  public_id   String           @unique @db.VarChar(24)
+  student_id  String           @db.Uuid
+  advisor_id  String           @db.Uuid
+  due_at      DateTime         @db.Timestamptz(6)
+  priority    FollowUpPriority @default(NORMAL)
+  status      FollowUpStatus   @default(PENDING)
+  description String           @db.Text
+
+  completed_at DateTime?
+  canceled_at  DateTime?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  advisor Users   @relation(fields: [advisor_id], references: [id], onDelete: Restrict)
+
+  @@index([student_id, status])
+  @@index([advisor_id, status, due_at])
+  @@map("follow_ups")
 }
