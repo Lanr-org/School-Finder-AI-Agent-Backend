@@ -53,6 +53,7 @@ model Users {
   authored_follow_ups  FollowUp[]
   authored_bulletins   IndustryBulletin[]
   authored_visa_rates  VisaSuccessRate[]
+  generated_recommendation_runs RecommendationRun[]
 
   @@map("users")
 }
@@ -207,6 +208,8 @@ model Student {
   conversations Conversations[]
   notes         StudentNote[]
   follow_ups    FollowUp[]
+  recommendation_runs  RecommendationRun[]
+  shortlisted_programs StudentShortlist[]
 
   @@index([assigned_advisor_id])
   @@index([status, created_at(sort: Desc)])
@@ -358,6 +361,9 @@ model Programs {
 
   // Intakes & deadlines
   intakes ProgramIntakes[]
+
+  recommendations Recommendation[]
+  shortlisted_by  StudentShortlist[]
 
   // Entry requirements
   academic_requirements String? @db.Text
@@ -554,4 +560,77 @@ model VisaSuccessRate {
 
   @@index([country, is_active, published_at(sort: Desc)])
   @@map("visa_success_rates")
+}
+
+// ==========================================
+// MODELS FOR THE RECOMMENDATION ENGINE
+// ==========================================
+
+// Versioned, never mutated in place — every PUT inserts a new row so past
+// recommendation_runs stay reproducible against the weights active when they
+// ran. Weight sum-to-100 is enforced at the Zod/service layer, not a DB CHECK
+// constraint (no precedent for one anywhere else in this schema).
+model RecommendationWeights {
+  id             String   @id @default(uuid()) @db.Uuid
+  version        Int      @unique
+  program_weight Int
+  budget_weight  Int
+  intake_weight  Int
+  visa_weight    Int
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("recommendation_weights")
+}
+
+model RecommendationRun {
+  id               String   @id @default(uuid()) @db.Uuid
+  public_id        String   @unique @db.VarChar(24)
+  student_id       String   @db.Uuid
+  weights_version  Int
+  scoring_version  String   @db.VarChar(20)
+  student_snapshot Json
+  generated_by     String   @db.Uuid
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  student     Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  generator   Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
+  recommendations Recommendation[]
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("recommendation_runs")
+}
+
+model Recommendation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  public_id            String   @unique @db.VarChar(24)
+  run_id               String   @db.Uuid
+  program_id           String   @db.Uuid
+  program_fit          Decimal  @db.Decimal(5, 2) // 0-100, bounded at the Zod layer (see VisaSuccessRate.success_rate precedent)
+  budget_fit           Decimal  @db.Decimal(5, 2)
+  intake_fit           Decimal  @db.Decimal(5, 2)
+  visa_fit             Decimal  @db.Decimal(5, 2)
+  overall_score        Decimal  @db.Decimal(5, 2)
+  reasons              String[]
+  missing_requirements String[]
+  program_snapshot     Json
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  run     RecommendationRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  program Programs          @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@unique([run_id, program_id])
+  @@index([run_id, overall_score(sort: Desc)])
+  @@map("recommendations")
+}
+
+model StudentShortlist {
+  student_id String   @db.Uuid
+  program_id String   @db.Uuid
+  added_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  student Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  program Programs @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@id([student_id, program_id])
+  @@map("student_shortlists")
 }

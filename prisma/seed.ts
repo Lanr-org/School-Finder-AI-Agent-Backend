@@ -174,9 +174,34 @@ const seedSettingGroups = async (): Promise<void> => {
   }
 }
 
+// Default weights preserved from the recommendation-weights UI mockup
+// (SettingsPage.tsx, later removed pending this engine) — program-fit
+// weighted highest, budget/intake/visa filling the remainder to 100.
+const seedRecommendationWeights = async (): Promise<void> => {
+  const existing = await prisma.recommendationWeights.findFirst()
+  if (existing) {
+    console.log(
+      `Recommendation weights already seeded (version ${existing.version})`,
+    )
+    return
+  }
+
+  await prisma.recommendationWeights.create({
+    data: {
+      version: 1,
+      program_weight: 35,
+      budget_weight: 25,
+      intake_weight: 20,
+      visa_weight: 20,
+    },
+  })
+  console.log('Recommendation weights seeded: version 1 (35/25/20/20)')
+}
+
 const main = async (): Promise<void> => {
   await seedBootstrapAdmin()
   await seedSettingGroups()
+  await seedRecommendationWeights()
 }
 
 main()

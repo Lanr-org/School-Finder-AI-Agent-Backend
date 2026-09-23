@@ -1,38 +1,22 @@
 import { createError } from '../../common/errors/AppError.js'
 import { StudentsRepo } from '../students/students.repository.js'
+import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
+import { RecommendationsRepo } from '../recommendations/recommendations.repository.js'
+import {
+  scoreProgram,
+  type VisaRate,
+} from '../recommendations/recommendations.scoring.js'
 import { MatchingRepo } from './matching.repository.js'
-import { StudyLevel } from '../../generated/prisma/index.js'
+import { normalizeCountry } from './matching.normalizers.js'
 import type { ProgramMatch } from './matching.types.js'
 
-const STUDY_LEVEL_KEYWORDS: Record<StudyLevel, string[]> = {
-  UNDERGRADUATE: ['undergrad', 'bachelor', 'bsc', 'first degree'],
-  POSTGRADUATE: ['postgrad', 'master', 'msc', 'mba'],
-  DOCTORATE: ['phd', 'doctorate', 'doctoral'],
-  FOUNDATION: ['foundation', 'pre-university', 'access course'],
-}
-
-const normalizeStudyLevel = (raw: string | null): StudyLevel | undefined => {
-  if (!raw) return undefined
-  const lower = raw.toLowerCase()
-  const match = (
-    Object.entries(STUDY_LEVEL_KEYWORDS) as [StudyLevel, string[]][]
-  ).find(([, keywords]) => keywords.some((kw) => lower.includes(kw)))
-  return match?.[0]
-}
-
-// Maps abbreviations used by the Telegram destination buttons (e.g. "UK") to the full country
-// names stored on Schools.country. Anything not listed here passes through as-is and is matched
-// case-insensitively by the repo query, which covers plain casing differences on its own.
-const COUNTRY_ALIASES: Record<string, string> = {
-  UK: 'United Kingdom',
-  USA: 'United States',
-  US: 'United States',
-}
-
-export const normalizeCountry = (raw: string): string =>
-  COUNTRY_ALIASES[raw.toUpperCase()] ?? raw
+const POOL_CAP = 300
 
 export class MatchingService {
+  // Ephemeral AI-grounding shortlist — called on every chat turn
+  // (ai-reply.service.ts), so it must never write to the database. Shares the
+  // same scoring core as the persisted recommendation-runs path
+  // (RecommendationsService.GenerateRun) via recommendations.scoring.ts.
   static FindMatchesForStudent = async (
     studentPublicId: string,
     limit = 10,
@@ -43,21 +27,31 @@ export class MatchingService {
       throw createError('Student not found', 404, {}, 'NOT_FOUND')
     }
 
-    const studyLevel = normalizeStudyLevel(student.study_level)
     const countries =
       student.target_destinations.length > 0
         ? student.target_destinations.map(normalizeCountry)
         : undefined
 
-    const programs = await MatchingRepo.findMatchingPrograms({
-      studyLevel,
-      countries,
-      intakeMonth: student.target_intake_month ?? undefined,
-      intakeYear: student.target_intake_year ?? undefined,
-      limit,
-    })
+    const [candidates, { weights }] = await Promise.all([
+      MatchingRepo.findMatchingPrograms({ countries, poolCap: POOL_CAP }),
+      RecommendationsRepo.getCurrentWeights(),
+    ])
 
-    return programs.map((program) => ({
+    const rates = await VisaRatesRepo.findLatestActiveForCountries(
+      countries ?? [],
+    )
+    const visaRateByCountry = new Map<string, VisaRate>(
+      rates.map((rate) => [rate.country.toLowerCase(), rate]),
+    )
+
+    const scored = candidates
+      .map((program) =>
+        scoreProgram(student, program, weights, visaRateByCountry),
+      )
+      .sort((a, b) => b.overallScore - a.overallScore)
+      .slice(0, limit)
+
+    return scored.map(({ program }) => ({
       publicId: program.public_id,
       name: program.name,
       studyLevel: program.study_level,

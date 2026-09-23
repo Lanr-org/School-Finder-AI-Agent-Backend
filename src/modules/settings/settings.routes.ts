@@ -1,6 +1,8 @@
 import express, { type Router } from 'express'
 import { SettingsController } from './settings.controller.js'
 import { SettingsSchemas } from './settings.schemas.js'
+import { RecommendationsController } from '../recommendations/recommendations.controller.js'
+import { RecommendationsSchemas } from '../recommendations/recommendations.schemas.js'
 import { validate, validateParams } from '../../middleware/validate.js'
 import { AuthenticateMiddleware } from '../../middleware/authenticate.js'
 import { requireRole } from '../../middleware/authorize.js'
@@ -19,6 +21,21 @@ const canReadSettings = requireRole('ADMIN', 'ADVISOR', 'OPERATIONS')
 const canManageSettings = requireRole('ADMIN')
 
 settingsRouter.get('/', canReadSettings, SettingsController.ListGroups)
+
+// Registered before the /:groupKey catch-all below — Express matches routes
+// in order, so /:groupKey would otherwise swallow this path as a group key.
+settingsRouter.get(
+  '/recommendation-weights',
+  canReadSettings,
+  RecommendationsController.GetWeights,
+)
+
+settingsRouter.put(
+  '/recommendation-weights',
+  canManageSettings,
+  validate(RecommendationsSchemas.updateWeightsSchema),
+  RecommendationsController.UpdateWeights,
+)
 
 settingsRouter.get(
   '/:groupKey',

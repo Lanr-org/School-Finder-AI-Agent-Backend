@@ -5,6 +5,8 @@ import { NotesController } from './notes.controller.js'
 import { NotesSchemas } from './notes.schemas.js'
 import { FollowUpsController } from '../followUps/followUps.controller.js'
 import { FollowUpsSchemas } from '../followUps/followUps.schemas.js'
+import { RecommendationsController } from '../recommendations/recommendations.controller.js'
+import { RecommendationsSchemas } from '../recommendations/recommendations.schemas.js'
 import {
   validate,
   validateParams,
@@ -124,4 +126,35 @@ studentsRouter.post(
   canAccessStudents,
   validateParams(FollowUpsSchemas.followUpIdParamsSchema),
   FollowUpsController.Cancel,
+)
+
+// ── Recommendations ──────────────────────────────────────────────────────────
+studentsRouter.post(
+  '/:studentId/recommendation-runs',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validate(RecommendationsSchemas.generateRunSchema),
+  RecommendationsController.GenerateRun,
+)
+
+studentsRouter.get(
+  '/:studentId/recommendations',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  RecommendationsController.GetLatestForStudent,
+)
+
+studentsRouter.post(
+  '/:studentId/shortlists',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validate(RecommendationsSchemas.createShortlistSchema),
+  RecommendationsController.CreateShortlist,
+)
+
+studentsRouter.delete(
+  '/:studentId/shortlists/:programId',
+  canAccessStudents,
+  validateParams(RecommendationsSchemas.studentProgramParamsSchema),
+  RecommendationsController.DeleteShortlist,
 )

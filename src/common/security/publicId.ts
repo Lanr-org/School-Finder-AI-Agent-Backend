@@ -40,6 +40,11 @@ export const createPublicVisaRateId = (): string => {
   return `VSR-${randomNum}`
 }
 
+export const createPublicRecommendationRunId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `RUN-${randomNum}`
+}
+
 const isPublicIdConflict = (error: unknown): boolean => {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&

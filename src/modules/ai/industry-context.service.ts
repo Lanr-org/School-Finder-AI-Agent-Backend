@@ -1,4 +1,4 @@
-import { normalizeCountry } from '../matching/matching.service.js'
+import { normalizeCountry } from '../matching/matching.normalizers.js'
 import { BulletinsRepo } from '../bulletins/bulletins.repository.js'
 import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
 

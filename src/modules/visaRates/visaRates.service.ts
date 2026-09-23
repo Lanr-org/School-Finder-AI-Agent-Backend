@@ -3,7 +3,7 @@ import {
   createPublicVisaRateId,
   withUniquePublicId,
 } from '../../common/security/publicId.js'
-import { normalizeCountry } from '../matching/matching.service.js'
+import { normalizeCountry } from '../matching/matching.normalizers.js'
 import { VisaRatesRepo } from './visaRates.repository.js'
 import type {
   CreateVisaRateDTO,

@@ -3,7 +3,7 @@ import {
   createPublicBulletinId,
   withUniquePublicId,
 } from '../../common/security/publicId.js'
-import { normalizeCountry } from '../matching/matching.service.js'
+import { normalizeCountry } from '../matching/matching.normalizers.js'
 import { BulletinsRepo } from './bulletins.repository.js'
 import type {
   CreateBulletinDTO,

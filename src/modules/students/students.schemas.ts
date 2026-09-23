@@ -13,7 +13,7 @@ const studentStatusEnum = z.enum([
   'CLOSED',
 ])
 
-const advisorIdSchema = z
+export const advisorIdSchema = z
   .string()
   .trim()
   .regex(
