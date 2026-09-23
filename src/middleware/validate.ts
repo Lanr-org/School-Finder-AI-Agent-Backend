@@ -41,6 +41,31 @@ export const validateParams =
     next()
   }
 
+export const validateQuery =
+  (schema: z.ZodType) => (req: Request, _res: Response, next: NextFunction) => {
+    const requestEnvironment = schema.safeParse(req.query)
+
+    if (!requestEnvironment.success) {
+      return next(
+        createError(
+          'Validation failed',
+          400,
+          { issues: requestEnvironment.error.issues },
+          'VALIDATION_ERROR',
+        ),
+      )
+    }
+
+    // Express 5 defines `req.query` as a getter-only property, so it can't be
+    // reassigned directly — redefine it to hold the parsed, coerced data.
+    Object.defineProperty(req, 'query', {
+      value: requestEnvironment.data,
+      writable: true,
+      configurable: true,
+    })
+    next()
+  }
+
 export const validateRefreshToken =
   (schema: z.ZodObject) =>
   (req: Request, _res: Response, next: NextFunction) => {

@@ -1,5 +1,6 @@
 import prisma from '../../database/prisma.js'
 import { ContactProvider, ConversationMode, ConversationStatus, StudentStatus } from '../../generated/prisma/index.js'
+import { createPublicConversationId } from '../../common/security/publicId.js'
 import { CreateContactStudentTransactionData } from './contacts.types.js'
 
 export class ContactsRepo {
@@ -17,8 +18,11 @@ export class ContactsRepo {
       include: {
         student: {
           include: {
+            // ESCALATED conversations are still "current" — only RESOLVED closes a thread.
+            // Otherwise a student messaging mid-escalation would silently spawn a new
+            // AI_BOT conversation and the AI would reply during an active human handoff.
             conversations: {
-              where: { status: ConversationStatus.ACTIVE },
+              where: { status: { in: [ConversationStatus.ACTIVE, ConversationStatus.ESCALATED] } },
               take: 1,
               orderBy: { created_at: 'desc' },
             },
@@ -34,6 +38,7 @@ export class ContactsRepo {
   static createStudentConversation = async (studentId: string) => {
     return prisma.conversations.create({
       data: {
+        public_id: createPublicConversationId(),
         student_id: studentId,
         mode: ConversationMode.AI_BOT,
         status: ConversationStatus.ACTIVE,
@@ -68,6 +73,7 @@ export class ContactsRepo {
 
       const newConversation = await tx.conversations.create({
         data: {
+          public_id: createPublicConversationId(),
           student_id: newStudent.id,
           mode: ConversationMode.AI_BOT,
           status: ConversationStatus.ACTIVE,

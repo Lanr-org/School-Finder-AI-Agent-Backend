@@ -48,6 +48,13 @@ model Users {
   invitations_received Team_Invitations[] @relation("InvitationRecipient")
   invitations_sent     Team_Invitations[] @relation("InvitationSender")
 
+  advisor_profile      AdvisorProfile?
+  authored_notes       StudentNote[]
+  authored_follow_ups  FollowUp[]
+  authored_bulletins   IndustryBulletin[]
+  authored_visa_rates  VisaSuccessRate[]
+  generated_recommendation_runs RecommendationRun[]
+
   @@map("users")
 }
 
@@ -141,7 +148,6 @@ enum StudentStatus {
 enum ConversationMode {
   AI_BOT
   HUMAN_ADVISOR
-  ESCALATED
 }
 
 enum ConversationStatus {
@@ -189,7 +195,8 @@ model Student {
 
   study_level         String?       @db.VarChar(50)
   target_destinations String[]
-  target_intake       String?       @db.VarChar(50)
+  target_intake_month IntakeMonth?
+  target_intake_year  Int?
   budget_range        String?       @db.VarChar(100)
   academic_background String?       @db.Text
   english_test_score  String?       @db.VarChar(100)
@@ -199,6 +206,10 @@ model Student {
 
   contact       Contacts        @relation(fields: [contact_id], references: [id], onDelete: Cascade)
   conversations Conversations[]
+  notes         StudentNote[]
+  follow_ups    FollowUp[]
+  recommendation_runs  RecommendationRun[]
+  shortlisted_programs StudentShortlist[]
 
   @@index([assigned_advisor_id])
   @@index([status, created_at(sort: Desc)])
@@ -207,6 +218,7 @@ model Student {
 
 model Conversations {
   id               String             @id @default(uuid()) @db.Uuid
+  public_id        String             @unique @db.VarChar(24)
   student_id       String             @db.Uuid
   mode             ConversationMode   @default(AI_BOT)
   status           ConversationStatus @default(ACTIVE)
@@ -233,4 +245,392 @@ model ConversationMessages {
 
   @@index([conversation_id, created_at(sort: Desc)])
   @@map("conversation_messages")
+}
+
+// ==========================================
+// ENUMS FOR SCHOOLS & PROGRAMS
+// ==========================================
+
+enum SchoolType {
+  UNIVERSITY
+  COLLEGE
+  INSTITUTE
+  POLYTECHNIC
+}
+
+enum SchoolRecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PartnerStatus {
+  PARTNER
+  PROSPECT
+  NON_PARTNER
+}
+
+// ==========================================
+// MODELS FOR SCHOOLS & PROGRAMS
+// ==========================================
+
+model Schools {
+  id         String @id @default(uuid()) @db.Uuid
+  public_id  String @unique @db.VarChar(24)
+
+  // Profile
+  name          String             @db.VarChar(200)
+  school_type   SchoolType
+  record_status SchoolRecordStatus @default(ACTIVE)
+  description   String?            @db.Text
+
+  // Contact & website
+  website           String?  @db.VarChar(255)
+  admissions_email  String?  @db.VarChar(255)
+  phone_numbers     String[]
+
+  // Location
+  street_address String?  @db.VarChar(255)
+  city           String   @db.VarChar(120)
+  country        String   @db.VarChar(120)
+  postal_code    String?  @db.VarChar(20)
+
+  // Partnership & internal assessment
+  partner_status                PartnerStatus @default(PROSPECT)
+  visa_friendliness_score       Int?
+  visa_friendliness_notes       String?       @db.Text
+  admission_friendliness_score  Int?
+  admission_friendliness_notes  String?       @db.Text
+  ranking_reputation_notes      String?       @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  programs Programs[]
+
+  @@index([country, city])
+  @@index([partner_status])
+  @@index([school_type])
+  @@map("schools")
+}
+
+// ==========================================
+// ENUMS FOR PROGRAMS
+// ==========================================
+
+enum StudyLevel {
+  UNDERGRADUATE
+  POSTGRADUATE
+  DOCTORATE
+  FOUNDATION
+}
+
+enum IntakeMonth {
+  JANUARY
+  FEBRUARY
+  MARCH
+  APRIL
+  MAY
+  JUNE
+  JULY
+  AUGUST
+  SEPTEMBER
+  OCTOBER
+  NOVEMBER
+  DECEMBER
+}
+
+model Programs {
+  id        String @id @default(uuid()) @db.Uuid
+  public_id String @unique @db.VarChar(24)
+
+  // Profile
+  name         String     @db.VarChar(200)
+  study_level  StudyLevel
+  qualification String    @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
+  category     String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
+  duration     String     @db.VarChar(50)  // e.g. "2 years", "18 months"
+
+  // School link
+  school_id String  @db.Uuid
+  school    Schools @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  // Tuition & funding
+  tuition_amount           Decimal @db.Decimal(10, 2)
+  tuition_currency         String  @db.VarChar(3) // ISO code, e.g. "USD", "GBP", "CAD"
+  scholarship_availability String? @db.VarChar(100) // e.g. "Full", "10%", "25%", "None"
+
+  // Intakes & deadlines
+  intakes ProgramIntakes[]
+
+  recommendations Recommendation[]
+  shortlisted_by  StudentShortlist[]
+
+  // Entry requirements
+  academic_requirements String? @db.Text
+  english_requirements  String? @db.Text
+
+  // Operations
+  operation_notes String? @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([school_id])
+  @@index([study_level])
+  @@index([category])
+  @@map("programs")
+}
+
+model ProgramIntakes {
+  id                   String      @id @default(uuid()) @db.Uuid
+  program_id           String      @db.Uuid
+  month                IntakeMonth
+  year                 Int
+  application_deadline DateTime?
+
+  program Programs @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@unique([program_id, month, year])
+  @@index([program_id])
+  @@map("program_intakes")
+}
+
+// ==========================================
+// ENUMS FOR ADVISOR PROFILES, NOTES & FOLLOW-UPS
+// ==========================================
+
+enum AdvisorAvailability {
+  AVAILABLE
+  LIMITED
+  UNAVAILABLE
+}
+
+enum FollowUpPriority {
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// OVERDUE is API-response-only (derived at read time from a PENDING row whose
+// due_at has passed) — repositories only ever write PENDING, COMPLETED, or CANCELED.
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+  OVERDUE
+}
+
+// ==========================================
+// MODELS FOR ADVISOR PROFILES, NOTES & FOLLOW-UPS
+// ==========================================
+
+model AdvisorProfile {
+  id           String              @id @default(uuid()) @db.Uuid
+  user_id      String              @unique @db.Uuid
+  availability AdvisorAvailability @default(AVAILABLE)
+  max_capacity Int? // null = unlimited
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  user Users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("advisor_profiles")
+}
+
+model StudentNote {
+  id         String  @id @default(uuid()) @db.Uuid
+  public_id  String  @unique @db.VarChar(24)
+  student_id String  @db.Uuid
+  advisor_id String  @db.Uuid
+  body       String  @db.Text
+
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at DateTime?
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  advisor Users   @relation(fields: [advisor_id], references: [id], onDelete: Restrict)
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("student_notes")
+}
+
+model FollowUp {
+  id          String           @id @default(uuid()) @db.Uuid
+  public_id   String           @unique @db.VarChar(24)
+  student_id  String           @db.Uuid
+  advisor_id  String           @db.Uuid
+  due_at      DateTime         @db.Timestamptz(6)
+  priority    FollowUpPriority @default(NORMAL)
+  status      FollowUpStatus   @default(PENDING)
+  description String           @db.Text
+
+  completed_at DateTime?
+  canceled_at  DateTime?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  advisor Users   @relation(fields: [advisor_id], references: [id], onDelete: Restrict)
+
+  @@index([student_id, status])
+  @@index([advisor_id, status, due_at])
+  @@map("follow_ups")
+}
+
+// ==========================================
+// MODELS FOR SETTINGS (admin-configurable lookup lists)
+// ==========================================
+
+// Groups are fixed/seeded, not creatable via the API — only their values are
+// admin-manageable (see AGENTS.md: "setting tables for admin-configurable
+// values" vs. database enums for stable system states like StudentStatus).
+model SettingGroup {
+  id         String   @id @default(uuid()) @db.Uuid
+  key        String   @unique @db.VarChar(60)
+  label      String   @db.VarChar(120)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  values SettingValue[]
+
+  @@map("setting_groups")
+}
+
+model SettingValue {
+  id         String   @id @default(uuid()) @db.Uuid
+  group_id   String   @db.Uuid
+  key        String   @db.VarChar(160) // slugified from label at creation, immutable after
+  label      String   @db.VarChar(160)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  group SettingGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, key])
+  @@index([group_id, is_active])
+  @@map("setting_values")
+}
+
+// ==========================================
+// MODELS FOR INDUSTRY INTEL (partner data -> AI grounding)
+// ==========================================
+
+// Ops/admin-entered content. Unlike SettingValue, these are not shared lookup
+// values other records reference, so DELETE is a direct hard delete —
+// is_active exists purely as a fast retract-without-losing-history toggle.
+model IndustryBulletin {
+  id             String    @id @default(uuid()) @db.Uuid
+  public_id      String    @unique @db.VarChar(24)
+  title          String    @db.VarChar(200)
+  body           String    @db.Text
+  source_partner String?   @db.VarChar(120)
+  countries      String[] // empty array = applies globally
+  published_at   DateTime  @db.Timestamptz(6)
+  expires_at     DateTime? @db.Timestamptz(6) // null = doesn't expire
+  is_active      Boolean   @default(true)
+  created_by     String    @db.Uuid
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  creator Users @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@index([is_active, expires_at])
+  @@map("industry_bulletins")
+}
+
+model VisaSuccessRate {
+  id             String   @id @default(uuid()) @db.Uuid
+  public_id      String   @unique @db.VarChar(24)
+  country        String   @db.VarChar(120)
+  source_partner String?  @db.VarChar(120)
+  period_label   String   @db.VarChar(60) // free text, e.g. "Q3 2026"
+  success_rate   Decimal  @db.Decimal(5, 2) // 0-100, bounded at the Zod layer (see AGENTS.md precedent: Schools.visa_friendliness_score)
+  sample_size    Int?
+  published_at   DateTime @db.Timestamptz(6)
+  is_active      Boolean  @default(true)
+  created_by     String   @db.Uuid
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  creator Users @relation(fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@index([country, is_active, published_at(sort: Desc)])
+  @@map("visa_success_rates")
+}
+
+// ==========================================
+// MODELS FOR THE RECOMMENDATION ENGINE
+// ==========================================
+
+// Versioned, never mutated in place — every PUT inserts a new row so past
+// recommendation_runs stay reproducible against the weights active when they
+// ran. Weight sum-to-100 is enforced at the Zod/service layer, not a DB CHECK
+// constraint (no precedent for one anywhere else in this schema).
+model RecommendationWeights {
+  id             String   @id @default(uuid()) @db.Uuid
+  version        Int      @unique
+  program_weight Int
+  budget_weight  Int
+  intake_weight  Int
+  visa_weight    Int
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("recommendation_weights")
+}
+
+model RecommendationRun {
+  id               String   @id @default(uuid()) @db.Uuid
+  public_id        String   @unique @db.VarChar(24)
+  student_id       String   @db.Uuid
+  weights_version  Int
+  scoring_version  String   @db.VarChar(20)
+  student_snapshot Json
+  generated_by     String   @db.Uuid
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  student     Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  generator   Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
+  recommendations Recommendation[]
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("recommendation_runs")
+}
+
+model Recommendation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  public_id            String   @unique @db.VarChar(24)
+  run_id               String   @db.Uuid
+  program_id           String   @db.Uuid
+  program_fit          Decimal  @db.Decimal(5, 2) // 0-100, bounded at the Zod layer (see VisaSuccessRate.success_rate precedent)
+  budget_fit           Decimal  @db.Decimal(5, 2)
+  intake_fit           Decimal  @db.Decimal(5, 2)
+  visa_fit             Decimal  @db.Decimal(5, 2)
+  overall_score        Decimal  @db.Decimal(5, 2)
+  reasons              String[]
+  missing_requirements String[]
+  program_snapshot     Json
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  run     RecommendationRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  program Programs          @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@unique([run_id, program_id])
+  @@index([run_id, overall_score(sort: Desc)])
+  @@map("recommendations")
+}
+
+model StudentShortlist {
+  student_id String   @db.Uuid
+  program_id String   @db.Uuid
+  added_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  student Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  program Programs @relation(fields: [program_id], references: [id], onDelete: Cascade)
+
+  @@id([student_id, program_id])
+  @@map("student_shortlists")
 }

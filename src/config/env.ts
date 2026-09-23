@@ -9,13 +9,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   COOKIE_SECRET: z.string().min(1, 'COOKIE_SECRET is required'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
-  DOCS_ENABLED: z.coerce.boolean().default(true),
+  DOCS_ENABLED: z.stringbool().default(true),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
 
   // Email (Optional in dev)
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
-  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_SECURE: z.stringbool().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default('School Finder AI <no-reply@example.com>'),
@@ -24,6 +24,10 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().optional(),
+
+  // Gemini (LLM) Integration
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.6-flash'),
 
   // Centrifugo Integration
   CENTRIFUGO_API_URL: z.string().default('http://localhost:8000/api'),
@@ -61,6 +65,9 @@ export const env = {
   telegramBotToken: parsed.data.TELEGRAM_BOT_TOKEN,
   telegramWebhookSecret: parsed.data.TELEGRAM_WEBHOOK_SECRET,
   telegramWebhookUrl: parsed.data.TELEGRAM_WEBHOOK_URL,
+
+  geminiApiKey: parsed.data.GEMINI_API_KEY,
+  geminiModel: parsed.data.GEMINI_MODEL,
 
   centrifugoApiUrl: parsed.data.CENTRIFUGO_API_URL,
   centrifugoApiKey: parsed.data.CENTRIFUGO_API_KEY,

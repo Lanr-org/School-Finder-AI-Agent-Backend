@@ -386,10 +386,7 @@ describe('Team API — DELETE /api/v1/team/invitations/:id', () => {
   it('returns 200 on successful cancellation', async () => {
     const inv = makeInvitation()
     teamRepoMock.findInvitationById.mockResolvedValue(inv)
-    teamRepoMock.CancelInvitation.mockResolvedValue({
-      ...inv,
-      canceled_at: new Date(),
-    })
+    teamRepoMock.CancelInvitation.mockResolvedValue(undefined)
 
     const token = makeAdminToken()
     const res = await request(app)
@@ -782,14 +779,13 @@ describe('TeamService.CancelInvitation — unit', () => {
 
   it('calls CancelInvitation repo with the correct id', async () => {
     teamRepoMock.findInvitationById.mockResolvedValue(makeInvitation())
-    teamRepoMock.CancelInvitation.mockResolvedValue(
-      makeInvitation({ canceled_at: new Date() }),
-    )
+    teamRepoMock.CancelInvitation.mockResolvedValue(undefined)
 
     await TeamService.CancelInvitation(adminClaims, 'invite-uuid-0001')
 
     expect(teamRepoMock.CancelInvitation).toHaveBeenCalledWith(
       'invite-uuid-0001',
+      'invited-user-uuid-0001',
     )
   })
 

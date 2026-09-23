@@ -1,6 +1,8 @@
 import prisma from '../../database/prisma.js'
-import { StudentStatus } from '../../generated/prisma/index.js'
-import { UpdateStudentPreferencesDTO } from './students.types.js'
+import { StudentStatus, type Prisma } from '../../generated/prisma/index.js'
+import { ListStudentsFilters, UpdateStudentPreferencesDTO } from './students.types.js'
+
+const withContact = { include: { contact: true } } as const
 
 export class StudentsRepo {
   /**
@@ -44,7 +46,8 @@ export class StudentsRepo {
       data: {
         ...(data.studyLevel !== undefined && { study_level: data.studyLevel }),
         ...(data.targetDestinations !== undefined && { target_destinations: data.targetDestinations }),
-        ...(data.targetIntake !== undefined && { target_intake: data.targetIntake }),
+        ...(data.targetIntakeMonth !== undefined && { target_intake_month: data.targetIntakeMonth }),
+        ...(data.targetIntakeYear !== undefined && { target_intake_year: data.targetIntakeYear }),
         ...(data.budgetRange !== undefined && { budget_range: data.budgetRange }),
         ...(data.academicBackground !== undefined && { academic_background: data.academicBackground }),
         ...(data.englishTestScore !== undefined && { english_test_score: data.englishTestScore }),
@@ -73,5 +76,49 @@ export class StudentsRepo {
         status: StudentStatus.ASSIGNED,
       },
     })
+  }
+
+  /**
+   * Clears a student's advisor assignment and reverts status to AWAITING_ASSIGNMENT.
+   */
+  static unassignAdvisorFromStudent = async (studentId: string) => {
+    return prisma.student.update({
+      where: { id: studentId },
+      data: {
+        assigned_advisor_id: null,
+        status: StudentStatus.AWAITING_ASSIGNMENT,
+      },
+    })
+  }
+
+  /**
+   * Lists students with optional status/advisor/search filters, newest first.
+   */
+  static listStudents = async (filters: ListStudentsFilters) => {
+    const where: Prisma.StudentWhereInput = {
+      ...(filters.status !== undefined && { status: filters.status }),
+      ...(filters.advisorUserId !== undefined && { assigned_advisor_id: filters.advisorUserId }),
+      ...(filters.search !== undefined && {
+        OR: [
+          { public_id: { contains: filters.search, mode: 'insensitive' } },
+          { contact: { first_name: { contains: filters.search, mode: 'insensitive' } } },
+          { contact: { last_name: { contains: filters.search, mode: 'insensitive' } } },
+          { contact: { email: { contains: filters.search, mode: 'insensitive' } } },
+        ],
+      }),
+    }
+
+    const [students, total] = await prisma.$transaction([
+      prisma.student.findMany({
+        where,
+        ...withContact,
+        orderBy: { created_at: 'desc' },
+        skip: (filters.page - 1) * filters.limit,
+        take: filters.limit,
+      }),
+      prisma.student.count({ where }),
+    ])
+
+    return { students, total }
   }
 }

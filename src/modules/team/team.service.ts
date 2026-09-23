@@ -249,10 +249,8 @@ export class TeamService {
       throw createError('Team member not found', 404, {}, 'NOT_FOUND')
     }
 
-    //you can edit active email
-    //what if an active user can't 
-    if (user.status == 'ACTIVE' && data.email != ""){
-     throw createError(`Can't edit an active user email `, 400, {}, 'NOT_FOUND')
+    if (user.status === 'ACTIVE' && data.email !== undefined) {
+      throw createError(`Can't edit an active user's email`, 400, {}, 'VALIDATION_ERROR')
     }
 
     const updated = await TeamRepo.updateUser(user.id, data)

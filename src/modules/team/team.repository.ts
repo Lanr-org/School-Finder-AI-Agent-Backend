@@ -63,18 +63,17 @@ class TeamRepo {
     })
   }
 
-  static async CancelInvitation(id:string, user_id: string) {
-     return prisma.$transaction( async (tx)=>{
-        await tx.team_Invitations.update({
-          where:{id},
-          data:{canceled_at: new Date()}
-        })
+  static async CancelInvitation(id: string, user_id: string) {
+    return prisma.$transaction(async (tx) => {
+      await tx.team_Invitations.update({
+        where: { id },
+        data: { canceled_at: new Date() },
+      })
 
-        await tx.users.delete({
-          where:{id:user_id}
-        })
-     })
-   
+      await tx.users.delete({
+        where: { id: user_id },
+      })
+    })
   }
 
   // ── Users ──────────────────────────────────────────────────────────────────
@@ -88,6 +87,13 @@ class TeamRepo {
   static async findUserByPublicId(publicId: string) {
     return prisma.users.findFirst({
       where: { public_id: publicId },
+    })
+  }
+
+  static async findUsersByIds(ids: string[]) {
+    return prisma.users.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, public_id: true, full_name: true, email: true },
     })
   }
 
