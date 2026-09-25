@@ -22,6 +22,7 @@ import {
   recommendationsRouter,
 } from './modules/recommendations/recommendations.routes'
 import { conversationsRouter } from './modules/conversations/conversations.routes'
+import { applicationsRouter } from './modules/applications/applications.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -52,6 +53,7 @@ app.use(`${version}/visa-success-rates`, visaRatesRouter)
 app.use(`${version}/recommendation-runs`, recommendationRunsRouter)
 app.use(`${version}/recommendations`, recommendationsRouter)
 app.use(`${version}/conversations`, conversationsRouter)
+app.use(`${version}/applications`, applicationsRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)

@@ -54,6 +54,9 @@ model Users {
   authored_bulletins   IndustryBulletin[]
   authored_visa_rates  VisaSuccessRate[]
   generated_recommendation_runs RecommendationRun[]
+  created_applications          StudentApplication[]
+  application_status_changes    ApplicationStatusHistory[]
+  student_status_changes        StudentStatusHistory[]
 
   @@map("users")
 }
@@ -210,6 +213,8 @@ model Student {
   follow_ups    FollowUp[]
   recommendation_runs  RecommendationRun[]
   shortlisted_programs StudentShortlist[]
+  applications         StudentApplication[]
+  status_history       StudentStatusHistory[]
 
   @@index([assigned_advisor_id])
   @@index([status, created_at(sort: Desc)])
@@ -364,6 +369,7 @@ model Programs {
 
   recommendations Recommendation[]
   shortlisted_by  StudentShortlist[]
+  applications    StudentApplication[]
 
   // Entry requirements
   academic_requirements String? @db.Text
@@ -633,4 +639,99 @@ model StudentShortlist {
 
   @@id([student_id, program_id])
   @@map("student_shortlists")
+}
+
+// ==========================================
+// ENUMS FOR APPLICATIONS & STATUS HISTORY
+// ==========================================
+
+enum ApplicationStatus {
+  DRAFT
+  DOCUMENTS_PENDING
+  SUBMITTED
+  OFFER_RECEIVED
+  VISA_PROCESSING
+  COMPLETED
+  REJECTED
+  WITHDRAWN
+}
+
+// Why a student's status changed — lets the timeline say "moved to FOLLOW_UP
+// because a follow-up was scheduled" instead of just showing the new value.
+enum StudentStatusChangeSource {
+  LEAD_CREATED
+  MANUAL
+  ADVISOR_ASSIGNED
+  ADVISOR_UNASSIGNED
+  FOLLOW_UP_CREATED
+  APPLICATION_CREATED
+}
+
+// ==========================================
+// MODELS FOR APPLICATIONS & STATUS HISTORY
+// ==========================================
+
+// program_id is Restrict (not Cascade like shortlists/recommendations):
+// applications are operational history and must survive program changes.
+// "One open application per student+program" is enforced in the service,
+// not a partial unique index (no precedent for one in this schema).
+model StudentApplication {
+  id                 String            @id @default(uuid()) @db.Uuid
+  public_id          String            @unique @db.VarChar(24)
+  student_id         String            @db.Uuid
+  program_id         String            @db.Uuid
+  created_by         String            @db.Uuid
+  status             ApplicationStatus @default(DRAFT)
+  intake_month       IntakeMonth?
+  intake_year        Int?
+  external_reference String?           @db.VarChar(100) // school's own application number
+  notes              String?           @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  student Student                    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  program Programs                   @relation(fields: [program_id], references: [id], onDelete: Restrict)
+  creator Users                      @relation(fields: [created_by], references: [id], onDelete: Restrict)
+  history ApplicationStatusHistory[]
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@index([status, updated_at(sort: Desc)])
+  @@index([program_id])
+  @@map("student_applications")
+}
+
+// Append-only. from_status is null for the initial DRAFT row written on create.
+model ApplicationStatusHistory {
+  id             String             @id @default(uuid()) @db.Uuid
+  application_id String             @db.Uuid
+  from_status    ApplicationStatus?
+  to_status      ApplicationStatus
+  changed_by     String?            @db.Uuid
+  note           String?            @db.Text
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+
+  application StudentApplication @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  changer     Users?             @relation(fields: [changed_by], references: [id], onDelete: Restrict)
+
+  @@index([application_id, created_at])
+  @@map("application_status_history")
+}
+
+// Append-only. changed_by is null for system changes (Telegram lead creation).
+// No backfill — rows start from this migration; earlier transitions were never recorded.
+model StudentStatusHistory {
+  id          String                    @id @default(uuid()) @db.Uuid
+  student_id  String                    @db.Uuid
+  from_status StudentStatus?
+  to_status   StudentStatus
+  source      StudentStatusChangeSource
+  changed_by  String?                   @db.Uuid
+  created_at  DateTime                  @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  changer Users?  @relation(fields: [changed_by], references: [id], onDelete: Restrict)
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("student_status_history")
 }

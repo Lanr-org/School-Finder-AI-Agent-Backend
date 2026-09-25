@@ -45,6 +45,11 @@ export const createPublicRecommendationRunId = (): string => {
   return `RUN-${randomNum}`
 }
 
+export const createPublicApplicationId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `APP-${randomNum}`
+}
+
 const isPublicIdConflict = (error: unknown): boolean => {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&

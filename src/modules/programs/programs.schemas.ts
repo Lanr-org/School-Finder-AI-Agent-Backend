@@ -4,7 +4,7 @@ import { z } from 'zod'
 extendZodWithOpenApi(z)
 
 const studyLevelEnum = z.enum(['UNDERGRADUATE', 'POSTGRADUATE', 'DOCTORATE', 'FOUNDATION'])
-const intakeMonthEnum = z.enum([
+export const intakeMonthEnum = z.enum([
   'JANUARY',
   'FEBRUARY',
   'MARCH',

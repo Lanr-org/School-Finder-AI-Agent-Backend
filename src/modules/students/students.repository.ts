@@ -1,6 +1,7 @@
 import prisma from '../../database/prisma.js'
 import { StudentStatus, type Prisma } from '../../generated/prisma/index.js'
 import { ListStudentsFilters, UpdateStudentPreferencesDTO } from './students.types.js'
+import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
 
 const withContact = { include: { contact: true } } as const
 
@@ -56,38 +57,55 @@ export class StudentsRepo {
   }
 
   /**
-   * Updates student lifecycle status (e.g. NEW -> AWAITING_ASSIGNMENT -> ASSIGNED -> COMPLETED).
+   * Manually sets student lifecycle status and records it in status history.
+   * Setting the current status again is a no-op (no history row).
    */
-  static updateStudentStatus = async (studentId: string, status: StudentStatus) => {
-    return prisma.student.update({
-      where: { id: studentId },
-      data: { status },
+  static updateStudentStatus = async (studentId: string, status: StudentStatus, changedBy: string) => {
+    return prisma.$transaction(async (tx) => {
+      await StudentStatusHistoryRepo.transition(tx, { studentId, to: status, source: 'MANUAL', changedBy })
+      return tx.student.findUniqueOrThrow({ where: { id: studentId } })
     })
   }
 
   /**
-   * Assigns an advisor to a student profile and updates status to ASSIGNED.
+   * Assigns an advisor. Only advances status from NEW/AWAITING_ASSIGNMENT —
+   * reassigning a student already in FOLLOW_UP/APPLICATION_STARTED keeps their
+   * status (previously this always reset them to ASSIGNED).
    */
-  static assignAdvisorToStudent = async (studentId: string, advisorId: string) => {
-    return prisma.student.update({
-      where: { id: studentId },
-      data: {
-        assigned_advisor_id: advisorId,
-        status: StudentStatus.ASSIGNED,
-      },
+  static assignAdvisorToStudent = async (studentId: string, advisorId: string, changedBy: string) => {
+    return prisma.$transaction(async (tx) => {
+      await tx.student.update({ where: { id: studentId }, data: { assigned_advisor_id: advisorId } })
+      await StudentStatusHistoryRepo.transition(tx, {
+        studentId,
+        to: StudentStatus.ASSIGNED,
+        allowedFrom: [StudentStatus.NEW, StudentStatus.AWAITING_ASSIGNMENT],
+        source: 'ADVISOR_ASSIGNED',
+        changedBy,
+      })
+      return tx.student.findUniqueOrThrow({ where: { id: studentId } })
     })
   }
 
   /**
-   * Clears a student's advisor assignment and reverts status to AWAITING_ASSIGNMENT.
+   * Clears a student's advisor assignment and moves them back to AWAITING_ASSIGNMENT —
+   * except COMPLETED/CLOSED students, which keep their status (unassigning must not reopen them).
    */
-  static unassignAdvisorFromStudent = async (studentId: string) => {
-    return prisma.student.update({
-      where: { id: studentId },
-      data: {
-        assigned_advisor_id: null,
-        status: StudentStatus.AWAITING_ASSIGNMENT,
-      },
+  static unassignAdvisorFromStudent = async (studentId: string, changedBy: string) => {
+    return prisma.$transaction(async (tx) => {
+      await tx.student.update({ where: { id: studentId }, data: { assigned_advisor_id: null } })
+      await StudentStatusHistoryRepo.transition(tx, {
+        studentId,
+        to: StudentStatus.AWAITING_ASSIGNMENT,
+        allowedFrom: [
+          StudentStatus.NEW,
+          StudentStatus.ASSIGNED,
+          StudentStatus.FOLLOW_UP,
+          StudentStatus.APPLICATION_STARTED,
+        ],
+        source: 'ADVISOR_UNASSIGNED',
+        changedBy,
+      })
+      return tx.student.findUniqueOrThrow({ where: { id: studentId } })
     })
   }
 

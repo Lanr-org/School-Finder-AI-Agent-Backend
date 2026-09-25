@@ -63,6 +63,7 @@ export class StudentsController {
       const result = await StudentsService.AssignAdvisor(
         studentId,
         req.body as AssignAdvisorToStudentDTO,
+        req.auth as AccessTokenClaims,
       )
       res.status(200).json(
         successResponse(
@@ -97,6 +98,33 @@ export class StudentsController {
         successResponse(true, 'Student status updated successfully', result, {
           requestId: req.id,
         }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // ── GET /students/:studentId/status-history ─────────────────────────────
+  static GetStatusHistory = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const studentId = req.params['studentId'] as string
+      const result = await StudentsService.GetStatusHistory(
+        studentId,
+        req.auth as AccessTokenClaims,
+      )
+      res.status(200).json(
+        successResponse(
+          true,
+          'Student status history retrieved successfully',
+          result,
+          {
+            requestId: req.id,
+          },
+        ),
       )
     } catch (error) {
       next(error)

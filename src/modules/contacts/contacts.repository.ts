@@ -71,6 +71,17 @@ export class ContactsRepo {
         },
       })
 
+      // Initial timeline entry — system-created lead, no staff user involved.
+      await tx.studentStatusHistory.create({
+        data: {
+          student_id: newStudent.id,
+          from_status: null,
+          to_status: StudentStatus.NEW,
+          source: 'LEAD_CREATED',
+          changed_by: null,
+        },
+      })
+
       const newConversation = await tx.conversations.create({
         data: {
           public_id: createPublicConversationId(),

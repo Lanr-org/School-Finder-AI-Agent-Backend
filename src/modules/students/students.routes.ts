@@ -7,6 +7,8 @@ import { FollowUpsController } from '../followUps/followUps.controller.js'
 import { FollowUpsSchemas } from '../followUps/followUps.schemas.js'
 import { RecommendationsController } from '../recommendations/recommendations.controller.js'
 import { RecommendationsSchemas } from '../recommendations/recommendations.schemas.js'
+import { ApplicationsController } from '../applications/applications.controller.js'
+import { ApplicationsSchemas } from '../applications/applications.schemas.js'
 import {
   validate,
   validateParams,
@@ -55,6 +57,13 @@ studentsRouter.patch(
   validateParams(StudentsSchemas.studentIdParamsSchema),
   validate(StudentsSchemas.updateStatusSchema),
   StudentsController.UpdateStatus,
+)
+
+studentsRouter.get(
+  '/:studentId/status-history',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  StudentsController.GetStatusHistory,
 )
 
 // ── Notes ────────────────────────────────────────────────────────────────────
@@ -126,6 +135,23 @@ studentsRouter.post(
   canAccessStudents,
   validateParams(FollowUpsSchemas.followUpIdParamsSchema),
   FollowUpsController.Cancel,
+)
+
+// ── Applications ─────────────────────────────────────────────────────────────
+studentsRouter.get(
+  '/:studentId/applications',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validateQuery(ApplicationsSchemas.listStudentApplicationsQuerySchema),
+  ApplicationsController.ListForStudent,
+)
+
+studentsRouter.post(
+  '/:studentId/applications',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validate(ApplicationsSchemas.createApplicationSchema),
+  ApplicationsController.Create,
 )
 
 // ── Recommendations ──────────────────────────────────────────────────────────

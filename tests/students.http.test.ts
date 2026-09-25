@@ -7,6 +7,7 @@ import AuthRepo from '../src/modules/auth/auth.repository'
 import { StudentsRepo } from '../src/modules/students/students.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import { AdvisorsRepo } from '../src/modules/advisors/advisors.repository'
+import { StudentStatusHistoryRepo } from '../src/modules/students/statusHistory.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,12 @@ vi.mock('../src/modules/students/students.repository', () => ({
     assignAdvisorToStudent: vi.fn(),
     unassignAdvisorFromStudent: vi.fn(),
     updateStudentStatus: vi.fn(),
+  },
+}))
+
+vi.mock('../src/modules/students/statusHistory.repository', () => ({
+  StudentStatusHistoryRepo: {
+    listForStudent: vi.fn(),
   },
 }))
 
@@ -58,6 +65,7 @@ const authRepoMock = vi.mocked(AuthRepo)
 const studentsRepoMock = vi.mocked(StudentsRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
 const advisorsRepoMock = vi.mocked(AdvisorsRepo)
+const statusHistoryRepoMock = vi.mocked(StudentStatusHistoryRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -319,6 +327,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
     expect(studentsRepoMock.assignAdvisorToStudent).toHaveBeenCalledWith(
       'student-uuid-1',
       ADVISOR_ID,
+      ADMIN_ID,
     )
   })
 
@@ -355,6 +364,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
     expect(res.status).toBe(200)
     expect(studentsRepoMock.unassignAdvisorFromStudent).toHaveBeenCalledWith(
       'student-uuid-1',
+      ADMIN_ID,
     )
     expect(
       body<{ assignedAdvisor: unknown }>(res).data.assignedAdvisor,
@@ -428,6 +438,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
     expect(studentsRepoMock.assignAdvisorToStudent).toHaveBeenCalledWith(
       'student-uuid-1',
       ADVISOR_ID,
+      ADMIN_ID,
     )
   })
 })
@@ -462,6 +473,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
     expect(studentsRepoMock.updateStudentStatus).toHaveBeenCalledWith(
       'student-uuid-1',
       'FOLLOW_UP',
+      ADVISOR_ID,
     )
     expect(body<{ status: string }>(res).data.status).toBe('FOLLOW_UP')
   })
@@ -502,5 +514,72 @@ describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
       .send({ status: 'COMPLETED' })
 
     expect(res.status).toBe(404)
+  })
+})
+
+describe('Students API — GET /api/v1/students/:studentId/status-history', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID }) as any,
+    )
+  })
+
+  it('returns history newest-first with the changer resolved to public fields', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    statusHistoryRepoMock.listForStudent.mockResolvedValue([
+      {
+        id: 'h2',
+        student_id: 'student-uuid-1',
+        from_status: 'ASSIGNED',
+        to_status: 'FOLLOW_UP',
+        source: 'FOLLOW_UP_CREATED',
+        changed_by: ADVISOR_ID,
+        created_at: new Date('2026-09-02'),
+        changer: { public_id: 'USR-946B7F71768D', full_name: 'Amina Advisor' },
+      },
+      {
+        id: 'h1',
+        student_id: 'student-uuid-1',
+        from_status: null,
+        to_status: 'NEW',
+        source: 'LEAD_CREATED',
+        changed_by: null,
+        created_at: new Date('2026-09-01'),
+        changer: null,
+      },
+    ] as any)
+
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440/status-history')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(200)
+    expect(statusHistoryRepoMock.listForStudent).toHaveBeenCalledWith(
+      'student-uuid-1',
+    )
+    const data = body<Record<string, unknown>[]>(res).data
+    expect(data).toHaveLength(2)
+    expect(data[0]).toEqual({
+      fromStatus: 'ASSIGNED',
+      toStatus: 'FOLLOW_UP',
+      source: 'FOLLOW_UP_CREATED',
+      changedBy: { publicId: 'USR-946B7F71768D', fullName: 'Amina Advisor' },
+      changedAt: '2026-09-02T00:00:00.000Z',
+    })
+    // System-created lead: no staff user, and no internal UUIDs leak.
+    expect(data[1]?.['changedBy']).toBeNull()
+    expect(JSON.stringify(data)).not.toContain(ADVISOR_ID)
+  })
+
+  it('returns 403 for an ADVISOR the student is not assigned to', async () => {
+    const authToken = asAdvisor(OTHER_ADVISOR_ID)
+
+    const res = await request(app)
+      .get('/api/v1/students/STU-8440/status-history')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(403)
+    expect(statusHistoryRepoMock.listForStudent).not.toHaveBeenCalled()
   })
 })

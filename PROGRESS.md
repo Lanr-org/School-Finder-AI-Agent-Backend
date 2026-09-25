@@ -594,3 +594,57 @@ been updated to match.
 Result: 238/238 tests passing across 11 files, typecheck clean. (`npm run lint` fails, but on
 `scripts/import-programs.mjs` — a pre-existing file from commit `7bd5aed`, untouched this session;
 a pre-existing ESLint typed-linting config gap, not a regression from this work.)
+
+## Applications + student status history (2026-09-25)
+
+BACKLOG #5 (Phase 6). Migration `20260925154347_add_applications_and_status_history` adds
+`student_applications` (`APP-XXXX`), `application_status_history`, and `student_status_history`,
+plus enums `ApplicationStatus` and `StudentStatusChangeSource`. Purely additive; no backfill —
+history starts at migration time.
+
+**Student status history.** `src/modules/students/statusHistory.repository.ts`
+(`StudentStatusHistoryRepo.transition`) moves a student and appends a history row inside the
+caller's transaction, only when the status actually changes. `allowedFrom` guards automatic
+moves so they never regress a student, and the update is guarded on the status just read, so
+concurrent changes can't record a stale `from_status`. All five writers use it: manual
+`PATCH /students/:id/status` (`MANUAL`), assign (`ADVISOR_ASSIGNED`), unassign
+(`ADVISOR_UNASSIGNED`), follow-up create (`FOLLOW_UP_CREATED`), and Telegram lead creation
+(`LEAD_CREATED`, `changed_by` null). New `GET /students/:studentId/status-history`.
+
+Behaviour fixes made along the way:
+- Reassigning an advisor no longer resets a FOLLOW_UP/APPLICATION_STARTED student to ASSIGNED
+  (it only advances from NEW/AWAITING_ASSIGNMENT).
+- Unassigning no longer reopens COMPLETED/CLOSED students.
+- Setting a student to the status they already have is a no-op (no history row).
+
+**Applications module** (`src/modules/applications/`). Forward-only transitions in the pure
+`applications.transitions.ts`: skipping forward is allowed, REJECTED/WITHDRAWN from any open
+status, COMPLETED/REJECTED/WITHDRAWN are final, anything else is 409. Status updates are guarded
+on the previously read status (concurrent change → 409 "refresh and retry"). Create rules:
+program must exist; at most one non-terminal application per student+program (service check,
+not a partial unique index); `intakeMonth`+`intakeYear` must come together and match a stored
+`ProgramIntakes` row, so intakes and deadlines always come from stored records. Creating an
+application also moves an ASSIGNED/FOLLOW_UP student to APPLICATION_STARTED in the same
+transaction. `program_id` is `Restrict` — applications survive program changes; future
+school/program DELETE routes must 409 when applications exist.
+
+Routes: `GET/POST /students/:studentId/applications`, `GET /applications` (advisor-scoped,
+`summary` counts per status), `GET /applications/:applicationId` (with history),
+`PATCH /applications/:applicationId`, `PATCH /applications/:applicationId/status`.
+ADMIN + ADVISOR only; ownership enforced through the application's student. All 7 new
+operations documented in `src/config/openapi.ts`.
+
+Tests: `applications.transitions.test.ts`, `applications.http.test.ts`,
+`student-status-history.unit.test.ts` (in-memory fake transaction), status-history cases in
+`students.http.test.ts`. 402/402 passing, typecheck clean.
+
+Frontend (`lanr-agents-frontend`): `features/applications/` (API, hooks, client-side mirror of
+the transition rule for which options to offer), `CreateApplicationModal` (intake dropdown fed
+only from the program's stored intakes), `ApplicationDetailModal` (details, history, edit, and
+status change reusing `UpdateWorkflowStatusModal` — the application note is persisted),
+`ApplicationsPage` at `/applications` + sidebar entry, and on `StudentDetailPage` an
+Applications card plus a "Recent changes" status timeline (the old "Application status" card
+was renamed "Workflow status", since it shows the student's status). `tsc` + `vite build` clean.
+
+Found, not fixed (see BACKLOG 5c/5d): the student-status note is collected but never persisted;
+`errorHandler` only exposes `error.details` when `NODE_ENV=development`.

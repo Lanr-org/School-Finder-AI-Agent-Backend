@@ -11,6 +11,7 @@ import TeamRepo from '../team/team.repository.js'
 import { buildAdvisorLookup, type AdvisorRef } from '../team/advisor-lookup.js'
 import { AdvisorsRepo } from '../advisors/advisors.repository.js'
 import { StudentsRepo } from './students.repository.js'
+import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
 import type {
   AssignAdvisorToStudentDTO,
   ListStudentsQueryDTO,
@@ -128,6 +129,7 @@ export class StudentsService {
   static AssignAdvisor = async (
     publicId: string,
     dto: AssignAdvisorToStudentDTO,
+    auth: AccessTokenClaims,
   ) => {
     const student = await StudentsService.getStudentByPublicId(publicId)
 
@@ -136,7 +138,10 @@ export class StudentsService {
         { studentId: student.id },
         'Unassigning advisor from student.',
       )
-      const updated = await StudentsRepo.unassignAdvisorFromStudent(student.id)
+      const updated = await StudentsRepo.unassignAdvisorFromStudent(
+        student.id,
+        auth.sub,
+      )
       return toStudentResponse(
         { ...updated, contact: student.contact },
         new Map(),
@@ -172,6 +177,7 @@ export class StudentsService {
     const updated = await StudentsRepo.assignAdvisorToStudent(
       student.id,
       advisor.id,
+      auth.sub,
     )
     const advisorLookup = new Map([
       [
@@ -212,6 +218,7 @@ export class StudentsService {
     const updated = await StudentsRepo.updateStudentStatus(
       student.id,
       newStatus,
+      auth.sub,
     )
     const advisorLookup = await buildAdvisorLookup([
       updated.assigned_advisor_id,
@@ -220,5 +227,28 @@ export class StudentsService {
       { ...updated, contact: student.contact },
       advisorLookup,
     )
+  }
+
+  // ── GET /students/:studentId/status-history ─────────────────────────────
+  static GetStatusHistory = async (
+    publicId: string,
+    auth: AccessTokenClaims,
+  ) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+
+    const history = await StudentStatusHistoryRepo.listForStudent(student.id)
+    return history.map((entry) => ({
+      fromStatus: entry.from_status,
+      toStatus: entry.to_status,
+      source: entry.source,
+      changedBy: entry.changer
+        ? {
+            publicId: entry.changer.public_id,
+            fullName: entry.changer.full_name,
+          }
+        : null,
+      changedAt: entry.created_at,
+    }))
   }
 }
