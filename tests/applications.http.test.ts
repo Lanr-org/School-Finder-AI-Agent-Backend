@@ -409,9 +409,7 @@ describe('Applications API — PATCH /api/v1/applications/:applicationId/status'
     expect(res.status).toBe(200)
   })
 
-  // `details` (incl. the allowed list) is only exposed when NODE_ENV=development
-  // — see errorHandler — so only the code and message are asserted here.
-  it('returns 409 when moving backwards', async () => {
+  it('returns 409 with the allowed next statuses when moving backwards', async () => {
     const authToken = asAdvisor()
     applicationsRepoMock.findByPublicId.mockResolvedValue(
       makeApplication({ status: 'OFFER_RECEIVED' }) as any,
@@ -424,6 +422,12 @@ describe('Applications API — PATCH /api/v1/applications/:applicationId/status'
     expect(body(res).error?.message).toBe(
       'Cannot move an application from OFFER_RECEIVED to DRAFT',
     )
+    // 4xx details are sent outside development (see errorHandler).
+    expect(body(res).error?.details).toEqual({
+      from: 'OFFER_RECEIVED',
+      to: 'DRAFT',
+      allowed: ['VISA_PROCESSING', 'COMPLETED', 'REJECTED', 'WITHDRAWN'],
+    })
     expect(applicationsRepoMock.updateStatus).not.toHaveBeenCalled()
   })
 

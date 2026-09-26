@@ -764,3 +764,20 @@ folder map updated. 440/440 tests passing.
 Found while documenting (BACKLOG 5f, not fixed here): `unassigned=false` is coerced to true on
 `GET /conversations`; `GET /students/:id/recommendations` has two response shapes; team routes lack
 param validation; the Telegram webhook uses its own error shape.
+
+## Error details for clients + validation field map (2026-09-26)
+
+BACKLOG 5d. `errorHandler` only sent `error.details` when `NODE_ENV=development`, so production
+clients never got field-level validation errors or 409 context (e.g. an application's allowed next
+statuses). Decision (confirmed): 4xx errors always include non-empty `details`; 5xx `details` stay
+development-only because three internal error sites put stack traces there (`tokenHash.ts`,
+`opaqueToken.ts`, `auth.repository.ts`). Empty `{}` details — what most errors pass — are omitted.
+
+`validate`/`validateParams`/`validateQuery` now return AGENTS.md's field map via `toFieldErrors`
+(`{ "email": ["Must be a valid email address"] }`, nested paths dot-joined like `intakes.0.year`,
+field-less refine errors under `_form`) instead of Zod's raw `{ issues: [...] }`. The frontend doesn't
+read `details` yet, so nothing breaks; forms can now show per-field messages.
+
+Tests: new `errorHandler.http.test.ts` (field map, `_form`, 409 context, empty details omitted, 5xx
+stack never sent outside development); the application-transition 409 test asserts the `allowed`
+list again. 447/447 passing.

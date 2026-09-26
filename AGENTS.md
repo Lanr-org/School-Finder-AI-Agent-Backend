@@ -619,6 +619,8 @@ Development: use a local mail-capture service (e.g. Mailpit) — do not send rea
 
 The global error handler maps known errors to stable public responses and logs unexpected errors once.
 
+`error.details`: client errors (4xx) always include it when non-empty — validation errors as a field map (`{ "email": ["..."] }`, nested fields dot-joined like `intakes.0.year`, field-less errors under `_form`), conflicts with their context (e.g. `allowed` next statuses). Server errors (5xx) can carry stack traces, so their details are only sent when `NODE_ENV=development`.
+
 ---
 
 ## Logging & Audit
