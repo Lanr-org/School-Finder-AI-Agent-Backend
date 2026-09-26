@@ -207,6 +207,7 @@ export class StudentsService {
     publicId: string,
     newStatus: StudentStatus,
     auth: AccessTokenClaims,
+    note?: string,
   ) => {
     const student = await StudentsService.getStudentByPublicId(publicId)
     assertStudentOwnership(student.assigned_advisor_id, auth)
@@ -219,6 +220,7 @@ export class StudentsService {
       student.id,
       newStatus,
       auth.sub,
+      note,
     )
     const advisorLookup = await buildAdvisorLookup([
       updated.assigned_advisor_id,
@@ -242,6 +244,7 @@ export class StudentsService {
       fromStatus: entry.from_status,
       toStatus: entry.to_status,
       source: entry.source,
+      note: entry.note,
       changedBy: entry.changer
         ? {
             publicId: entry.changer.public_id,

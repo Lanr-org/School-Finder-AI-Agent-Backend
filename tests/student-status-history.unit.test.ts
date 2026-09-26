@@ -77,6 +77,7 @@ describe('StudentStatusHistoryRepo.transition', () => {
         to_status: 'FOLLOW_UP',
         source: 'FOLLOW_UP_CREATED',
         changed_by: 'advisor-1',
+        note: null,
       },
     ])
   })
@@ -199,6 +200,53 @@ describe('StudentsRepo advisor assignment — status rules', () => {
       expect(state.history).toHaveLength(0)
     },
   )
+
+  it('a manual status change stores the note on the history row', async () => {
+    setStudent('FOLLOW_UP', 'advisor-1')
+
+    await StudentsRepo.updateStudentStatus(
+      'student-uuid-1',
+      'CLOSED',
+      'advisor-1',
+      'Student chose a local university.',
+    )
+
+    expect(state.history[0]).toMatchObject({
+      from_status: 'FOLLOW_UP',
+      to_status: 'CLOSED',
+      source: 'MANUAL',
+      changed_by: 'advisor-1',
+      note: 'Student chose a local university.',
+    })
+  })
+
+  it('automatic changes store a null note', async () => {
+    setStudent('AWAITING_ASSIGNMENT')
+
+    await StudentsRepo.assignAdvisorToStudent(
+      'student-uuid-1',
+      'advisor-1',
+      'admin-1',
+    )
+
+    expect(state.history[0]).toMatchObject({
+      source: 'ADVISOR_ASSIGNED',
+      note: null,
+    })
+  })
+
+  it('a same-status change with a note still writes nothing', async () => {
+    setStudent('ASSIGNED', 'advisor-1')
+
+    await StudentsRepo.updateStudentStatus(
+      'student-uuid-1',
+      'ASSIGNED',
+      'advisor-1',
+      'ignored',
+    )
+
+    expect(state.history).toHaveLength(0)
+  })
 
   it('a manual status change to the same status writes nothing', async () => {
     setStudent('ASSIGNED', 'advisor-1')

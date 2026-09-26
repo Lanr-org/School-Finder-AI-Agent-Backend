@@ -43,5 +43,6 @@ export class StudentsSchemas {
 
   static updateStatusSchema = z.object({
     status: studentStatusEnum,
+    note: z.string().trim().min(1).max(2000).optional(),
   })
 }

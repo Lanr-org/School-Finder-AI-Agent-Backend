@@ -1445,6 +1445,7 @@ const studentStatusHistoryResponseSchema = registry.register(
           'FOLLOW_UP_CREATED',
           'APPLICATION_CREATED',
         ]),
+        note: z.string().nullable(),
         changedBy: staffRefSchema.nullable(),
         changedAt: z.date(),
       }),
@@ -1645,6 +1646,54 @@ registry.registerPath({
     401: errorContent('Bearer token is missing or invalid.'),
     403: errorContent('Role not allowed, or the student is not assigned to this advisor.'),
     404: errorContent('Student not found.'),
+  },
+})
+
+// ==========================================
+// HEALTH
+// ==========================================
+
+registry.registerPath({
+  method: 'get',
+  path: '/health/live',
+  tags: ['Health'],
+  summary: 'Liveness probe',
+  description:
+    'Public. Returns 200 while the Node process is up and serving requests. Checks no dependencies, so a database outage never marks the process as dead.',
+  responses: {
+    200: {
+      description: 'The process is live.',
+      content: {
+        'application/json': {
+          schema: successEnvelope(z.object({ status: z.literal('ok') })),
+        },
+      },
+    },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/health/ready',
+  tags: ['Health'],
+  summary: 'Readiness probe',
+  description:
+    'Public. Returns 200 when PostgreSQL answers a trivial query within 2 seconds, otherwise 503 with code SERVICE_UNAVAILABLE. Connection details are never exposed.',
+  responses: {
+    200: {
+      description: 'The service can reach its database.',
+      content: {
+        'application/json': {
+          schema: successEnvelope(
+            z.object({
+              status: z.literal('ready'),
+              checks: z.object({ database: z.literal('up') }),
+            }),
+          ),
+        },
+      },
+    },
+    503: errorContent('The database is unreachable or did not answer in time.'),
   },
 })
 

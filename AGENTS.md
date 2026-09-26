@@ -597,15 +597,16 @@ Development: use a local mail-capture service (e.g. Mailpit) — do not send rea
 
 ## Error Codes
 
-| Code               | HTTP | Notes                                                                                                                                                |
-| ------------------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_ERROR` | 400  |                                                                                                                                                      |
-| `UNAUTHENTICATED`  | 401  |                                                                                                                                                      |
-| `FORBIDDEN`        | 403  |                                                                                                                                                      |
-| `NOT_FOUND`        | 404  |                                                                                                                                                      |
-| `CONFLICT`         | 409  | Duplicate email/school/program, advisor at capacity, invitation already accepted/canceled, setting value in use, stale optimistic-concurrency update |
-| `RATE_LIMITED`     | 429  |                                                                                                                                                      |
-| `INTERNAL_ERROR`   | 500  |                                                                                                                                                      |
+| Code                  | HTTP | Notes                                                                                                                                                |
+| --------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_ERROR`    | 400  |                                                                                                                                                      |
+| `UNAUTHENTICATED`     | 401  |                                                                                                                                                      |
+| `FORBIDDEN`           | 403  |                                                                                                                                                      |
+| `NOT_FOUND`           | 404  |                                                                                                                                                      |
+| `CONFLICT`            | 409  | Duplicate email/school/program, advisor at capacity, invitation already accepted/canceled, setting value in use, stale optimistic-concurrency update |
+| `RATE_LIMITED`        | 429  |                                                                                                                                                      |
+| `INTERNAL_ERROR`      | 500  |                                                                                                                                                      |
+| `SERVICE_UNAVAILABLE` | 503  | `GET /health/ready` only — PostgreSQL unreachable or did not answer within 2s                                                                        |
 
 The global error handler maps known errors to stable public responses and logs unexpected errors once.
 

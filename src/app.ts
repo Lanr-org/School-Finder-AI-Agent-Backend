@@ -23,6 +23,7 @@ import {
 } from './modules/recommendations/recommendations.routes'
 import { conversationsRouter } from './modules/conversations/conversations.routes'
 import { applicationsRouter } from './modules/applications/applications.routes'
+import { healthRouter } from './modules/health/health.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -39,6 +40,9 @@ if (env.docsEnabled) {
   app.get('/openapi.json', (_req, res) => res.json(openApiDocument))
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument))
 }
+
+// Public, unauthenticated probes — outside the versioned API prefix.
+app.use('/health', healthRouter)
 
 const version = `/api/v1`
 app.use(`${version}/auth`, authRouter)

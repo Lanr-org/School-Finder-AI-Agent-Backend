@@ -58,11 +58,16 @@ export class StudentsRepo {
 
   /**
    * Manually sets student lifecycle status and records it in status history.
-   * Setting the current status again is a no-op (no history row).
+   * Setting the current status again is a no-op (no history row, note dropped).
    */
-  static updateStudentStatus = async (studentId: string, status: StudentStatus, changedBy: string) => {
+  static updateStudentStatus = async (
+    studentId: string,
+    status: StudentStatus,
+    changedBy: string,
+    note?: string,
+  ) => {
     return prisma.$transaction(async (tx) => {
-      await StudentStatusHistoryRepo.transition(tx, { studentId, to: status, source: 'MANUAL', changedBy })
+      await StudentStatusHistoryRepo.transition(tx, { studentId, to: status, source: 'MANUAL', changedBy, note })
       return tx.student.findUniqueOrThrow({ where: { id: studentId } })
     })
   }

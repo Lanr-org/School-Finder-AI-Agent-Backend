@@ -648,3 +648,26 @@ was renamed "Workflow status", since it shows the student's status). `tsc` + `vi
 
 Found, not fixed (see BACKLOG 5c/5d): the student-status note is collected but never persisted;
 `errorHandler` only exposes `error.details` when `NODE_ENV=development`.
+
+## Student-status note + health endpoints (2026-09-26)
+
+**Status note (BACKLOG 5c).** The note collected by `UpdateWorkflowStatusModal` on the student
+page was silently dropped. Migration `20260926041219_add_student_status_history_note` adds a
+nullable `student_status_history.note`; `PATCH /students/:studentId/status` accepts an optional
+`note` (trimmed, 1–2000 chars) and `StudentStatusHistoryRepo.transition` stores it. Automatic
+changes (assignment, follow-up, application) store null; a same-status request with a note is
+still a no-op. `GET /students/:studentId/status-history` returns `note`, and the frontend's
+"Recent changes" timeline shows it. Verified against the real DB on the QA student STU-1927.
+
+**Health endpoints.** `src/modules/health/health.routes.ts`, mounted at `/health` (public,
+outside `/api/v1`). `GET /health/live` → 200 with no dependency checks, so a DB outage never
+gets a healthy process restarted. `GET /health/ready` → 200 when PostgreSQL answers `SELECT 1`
+within 2s, otherwise 503 `SERVICE_UNAVAILABLE` (new code, added to the AGENTS.md error table)
+with no connection details in the response. Both documented in OpenAPI. Verified live against
+the real DB.
+
+Tests: `health.http.test.ts` (live, ready up/down/timeout — the timeout case uses real timers,
+since faking setTimeout also stalls supertest), note cases in `students.http.test.ts` and
+`student-status-history.unit.test.ts`. 411/411 passing; frontend `tsc` + `vite build` clean.
+
+Graceful shutdown (Prisma/BullMQ not closed on SIGTERM) logged as BACKLOG 5e.

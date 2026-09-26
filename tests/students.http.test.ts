@@ -474,8 +474,44 @@ describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
       'student-uuid-1',
       'FOLLOW_UP',
       ADVISOR_ID,
+      undefined,
     )
     expect(body<{ status: string }>(res).data.status).toBe('FOLLOW_UP')
+  })
+
+  it('passes a trimmed status-change note through to the repository', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID, status: 'FOLLOW_UP' }) as any,
+    )
+    studentsRepoMock.updateStudentStatus.mockResolvedValue(
+      makeStudent({ assigned_advisor_id: ADVISOR_ID, status: 'CLOSED' }) as any,
+    )
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'CLOSED', note: '  Student chose a local university.  ' })
+
+    expect(res.status).toBe(200)
+    expect(studentsRepoMock.updateStudentStatus).toHaveBeenCalledWith(
+      'student-uuid-1',
+      'CLOSED',
+      ADVISOR_ID,
+      'Student chose a local university.',
+    )
+  })
+
+  it('returns 400 for an empty note', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/status')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ status: 'CLOSED', note: '   ' })
+
+    expect(res.status).toBe(400)
+    expect(body(res).error?.code).toBe('VALIDATION_ERROR')
   })
 
   it('returns 403 for an ADVISOR the student is not assigned to', async () => {
@@ -535,6 +571,7 @@ describe('Students API — GET /api/v1/students/:studentId/status-history', () =
         to_status: 'FOLLOW_UP',
         source: 'FOLLOW_UP_CREATED',
         changed_by: ADVISOR_ID,
+        note: null,
         created_at: new Date('2026-09-02'),
         changer: { public_id: 'USR-946B7F71768D', full_name: 'Amina Advisor' },
       },
@@ -564,6 +601,7 @@ describe('Students API — GET /api/v1/students/:studentId/status-history', () =
       fromStatus: 'ASSIGNED',
       toStatus: 'FOLLOW_UP',
       source: 'FOLLOW_UP_CREATED',
+      note: null,
       changedBy: { publicId: 'USR-946B7F71768D', fullName: 'Amina Advisor' },
       changedAt: '2026-09-02T00:00:00.000Z',
     })

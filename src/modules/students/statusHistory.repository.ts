@@ -23,6 +23,7 @@ export class StudentStatusHistoryRepo {
       source: StudentStatusChangeSource
       changedBy: string | null
       allowedFrom?: StudentStatus[]
+      note?: string | undefined
     },
   ): Promise<boolean> => {
     const current = await tx.student.findUnique({
@@ -47,6 +48,7 @@ export class StudentStatusHistoryRepo {
         to_status: params.to,
         source: params.source,
         changed_by: params.changedBy,
+        note: params.note ?? null,
       },
     })
     return true

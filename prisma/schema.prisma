@@ -727,6 +727,7 @@ model StudentStatusHistory {
   to_status   StudentStatus
   source      StudentStatusChangeSource
   changed_by  String?                   @db.Uuid
+  note        String?                   @db.Text // optional staff note; null for automatic changes
   created_at  DateTime                  @default(now()) @db.Timestamptz(6)
 
   student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)

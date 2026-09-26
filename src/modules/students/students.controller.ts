@@ -88,11 +88,12 @@ export class StudentsController {
   ) => {
     try {
       const studentId = req.params['studentId'] as string
-      const { status } = req.body as UpdateStudentStatusDTO
+      const { status, note } = req.body as UpdateStudentStatusDTO
       const result = await StudentsService.UpdateStatus(
         studentId,
         status,
         req.auth as AccessTokenClaims,
+        note,
       )
       res.status(200).json(
         successResponse(true, 'Student status updated successfully', result, {
