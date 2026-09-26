@@ -21,7 +21,13 @@ export class ConversationsSchemas {
   static listConversationsQuerySchema = z.object({
     status: conversationStatusEnum.optional(),
     advisorId: advisorIdSchema.optional(),
-    unassigned: z.coerce.boolean().optional(),
+    // Not z.coerce.boolean(): that turns any non-empty string, including
+    // "false", into true. Same pattern as hasMissingRequirements in
+    // recommendations.schemas.ts.
+    unassigned: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
     search: z.string().trim().min(1).optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),

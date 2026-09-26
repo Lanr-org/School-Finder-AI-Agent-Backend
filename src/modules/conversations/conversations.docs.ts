@@ -100,7 +100,7 @@ export const registerConversationsDocs = (registry: OpenAPIRegistry) => {
     tags: ['Conversations'],
     security: [{ bearerAuth: [] }],
     summary: 'List conversations',
-    description: `Requires a bearer access token. ${ROLE_NOTE} ADVISOR results are always limited to their own students (advisorId and unassigned are ignored). ADMIN may filter by a public advisorId, or unassigned=true for conversations whose student has no advisor. search matches the student ID and first/last name. Most recent activity first.`,
+    description: `Requires a bearer access token. ${ROLE_NOTE} ADVISOR results are always limited to their own students (advisorId and unassigned are ignored). ADMIN may filter by a public advisorId, or unassigned=true for conversations whose student has no advisor (false or omitted applies no filter). search matches the student ID and first/last name. Most recent activity first.`,
     request: { query: registeredListConversationsQuerySchema },
     responses: {
       200: {

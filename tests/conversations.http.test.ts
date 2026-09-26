@@ -213,6 +213,31 @@ describe('Conversations API — GET /api/v1/conversations', () => {
       expect.objectContaining({ unassigned: true }),
     )
   })
+
+  // Regression: z.coerce.boolean() used to turn the string "false" into true.
+  it('treats unassigned=false as false, not true', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .get('/api/v1/conversations?unassigned=false')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(200)
+    expect(conversationsRepoMock.listConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ unassigned: false }),
+    )
+  })
+
+  it('rejects a non-boolean unassigned value', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .get('/api/v1/conversations?unassigned=yes')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(400)
+    expect(conversationsRepoMock.listConversations).not.toHaveBeenCalled()
+  })
 })
 
 describe('Conversations API — POST /api/v1/conversations/:conversationId/replies', () => {
