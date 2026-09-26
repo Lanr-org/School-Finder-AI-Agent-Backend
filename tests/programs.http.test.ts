@@ -209,6 +209,7 @@ describe('Programs API — POST /api/v1/programs', () => {
       expect.stringMatching(/^PRG-\d{4}$/),
       'school-uuid-0001',
       expect.objectContaining({ name: 'MSc Computer Science' }),
+      expect.anything(),
     )
   })
 
@@ -284,6 +285,7 @@ describe('Programs API — POST /api/v1/programs', () => {
       expect.any(String),
       expect.any(String),
       expect.objectContaining({ tuitionCurrency: 'CAD' }),
+      expect.anything(),
     )
   })
 
@@ -474,6 +476,7 @@ describe('Programs API — PATCH /api/v1/programs/:programId', () => {
       'program-uuid-0001',
       undefined,
       expect.objectContaining({ duration: '2 years' }),
+      expect.anything(),
     )
   })
 
@@ -494,6 +497,7 @@ describe('Programs API — PATCH /api/v1/programs/:programId', () => {
       'program-uuid-0001',
       'school-uuid-0002',
       expect.objectContaining({ schoolId: 'SCH-2002' }),
+      expect.anything(),
     )
   })
 

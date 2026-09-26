@@ -8,6 +8,7 @@ import { StudentsRepo } from '../src/modules/students/students.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import { AdvisorsRepo } from '../src/modules/advisors/advisors.repository'
 import { StudentStatusHistoryRepo } from '../src/modules/students/statusHistory.repository'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,8 @@ const studentsRepoMock = vi.mocked(StudentsRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
 const advisorsRepoMock = vi.mocked(AdvisorsRepo)
 const statusHistoryRepoMock = vi.mocked(StudentStatusHistoryRepo)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -328,6 +331,21 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
       'student-uuid-1',
       ADVISOR_ID,
       ADMIN_ID,
+      expect.anything(),
+    )
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'student.advisor_assigned',
+        entity_type: 'student',
+        entity_id: 'STU-8440',
+        actor_id: ADMIN_ID,
+        before_data: { status: 'ASSIGNED', advisor: null },
+        after_data: {
+          status: 'ASSIGNED',
+          advisor: { publicId: 'USR-0001', fullName: 'Alice Admin' },
+        },
+      }),
     )
   })
 
@@ -365,6 +383,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
     expect(studentsRepoMock.unassignAdvisorFromStudent).toHaveBeenCalledWith(
       'student-uuid-1',
       ADMIN_ID,
+      expect.anything(),
     )
     expect(
       body<{ assignedAdvisor: unknown }>(res).data.assignedAdvisor,
@@ -439,6 +458,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
       'student-uuid-1',
       ADVISOR_ID,
       ADMIN_ID,
+      expect.anything(),
     )
   })
 })
@@ -475,6 +495,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
       'FOLLOW_UP',
       ADVISOR_ID,
       undefined,
+      expect.anything(),
     )
     expect(body<{ status: string }>(res).data.status).toBe('FOLLOW_UP')
   })
@@ -499,6 +520,7 @@ describe('Students API — PATCH /api/v1/students/:studentId/status', () => {
       'CLOSED',
       ADVISOR_ID,
       'Student chose a local university.',
+      expect.anything(),
     )
   })
 

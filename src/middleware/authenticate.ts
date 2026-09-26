@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express'
+import { setRequestActor } from '../common/context/requestContext'
 import { createError } from '../common/errors/AppError'
 import { AUTH_ERROR_CODES } from '../common/errors/errorCodes'
 import { decodeAcessToken } from '../common/security/token'
@@ -92,6 +93,8 @@ export const AuthenticateMiddleware = async (
     }
 
     req.auth = tokenClaims
+    // Role from the verified DB row (the role at the time of the action), not the token claim.
+    setRequestActor(user.id, user.role)
     next()
   } catch (error) {
     next(error)

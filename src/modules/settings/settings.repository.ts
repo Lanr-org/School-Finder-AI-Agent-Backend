@@ -1,4 +1,5 @@
 import prisma from '../../database/prisma.js'
+import type { Db } from '../../database/transaction.js'
 
 export class SettingsRepo {
   static findAllGroupsWithValues = async () => {
@@ -22,8 +23,9 @@ export class SettingsRepo {
   static createValue = async (
     groupId: string,
     data: { key: string; label: string },
+    db: Db = prisma,
   ) => {
-    return prisma.settingValue.create({
+    return db.settingValue.create({
       data: { group_id: groupId, key: data.key, label: data.label },
     })
   }
@@ -37,8 +39,9 @@ export class SettingsRepo {
   static updateValue = async (
     id: string,
     data: { label?: string | undefined; isActive?: boolean | undefined },
+    db: Db = prisma,
   ) => {
-    return prisma.settingValue.update({
+    return db.settingValue.update({
       where: { id },
       data: {
         ...(data.label !== undefined && { label: data.label }),
@@ -47,7 +50,7 @@ export class SettingsRepo {
     })
   }
 
-  static deleteValue = async (id: string) => {
-    return prisma.settingValue.delete({ where: { id } })
+  static deleteValue = async (id: string, db: Db = prisma) => {
+    return db.settingValue.delete({ where: { id } })
   }
 }

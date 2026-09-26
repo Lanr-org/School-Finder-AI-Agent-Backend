@@ -1,5 +1,6 @@
 import type { Prisma } from '../../generated/prisma/index.js'
 import prisma from '../../database/prisma.js'
+import type { Db } from '../../database/transaction.js'
 import type { RecommendationWeightsInput } from './recommendations.scoring.js'
 
 // Preserved from the (now-removed) SettingsPage.tsx recommendation-weights
@@ -13,8 +14,8 @@ const DEFAULT_WEIGHTS: RecommendationWeightsInput = {
 }
 
 export class RecommendationsRepo {
-  static getLatestWeightsRow = async () => {
-    return prisma.recommendationWeights.findFirst({
+  static getLatestWeightsRow = async (db: Db = prisma) => {
+    return db.recommendationWeights.findFirst({
       orderBy: { version: 'desc' },
     })
   }
@@ -45,10 +46,11 @@ export class RecommendationsRepo {
   // active when they ran.
   static insertNextWeightsVersion = async (
     weights: RecommendationWeightsInput,
+    db: Db = prisma,
   ) => {
-    const current = await RecommendationsRepo.getLatestWeightsRow()
+    const current = await RecommendationsRepo.getLatestWeightsRow(db)
     const nextVersion = (current?.version ?? 0) + 1
-    return prisma.recommendationWeights.create({
+    return db.recommendationWeights.create({
       data: {
         version: nextVersion,
         program_weight: weights.programWeight,

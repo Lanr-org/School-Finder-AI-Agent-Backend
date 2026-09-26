@@ -9,6 +9,7 @@ import { openApiDocument } from './config/openapi'
 import { errorHandler } from './middleware/errorHandler'
 import { authRouter } from './modules/auth/auth.routes'
 import { requestId } from './middleware/requestId'
+import { requestContext } from './common/context/requestContext'
 import { teamRouter } from './modules/team/team.routes'
 import { schoolsRouter } from './modules/schools/schools.routes'
 import { programsRouter } from './modules/programs/programs.routes'
@@ -24,6 +25,7 @@ import {
 import { conversationsRouter } from './modules/conversations/conversations.routes'
 import { applicationsRouter } from './modules/applications/applications.routes'
 import { healthRouter } from './modules/health/health.routes'
+import { auditLogsRouter } from './modules/audit/audit.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -35,6 +37,8 @@ app.use(cors({ origin: true, credentials: true }))
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser(env.cookieSecret))
 app.use(helmet())
+// After the body/cookie parsers so the per-request context survives them.
+app.use(requestContext)
 
 if (env.docsEnabled) {
   app.get('/openapi.json', (_req, res) => res.json(openApiDocument))
@@ -58,6 +62,7 @@ app.use(`${version}/recommendation-runs`, recommendationRunsRouter)
 app.use(`${version}/recommendations`, recommendationsRouter)
 app.use(`${version}/conversations`, conversationsRouter)
 app.use(`${version}/applications`, applicationsRouter)
+app.use(`${version}/audit-logs`, auditLogsRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)

@@ -6,6 +6,7 @@ import {
   type Prisma,
 } from '../../generated/prisma/index.js'
 import { StudentStatusHistoryRepo } from '../students/statusHistory.repository.js'
+import { withTx, type Db, type Tx } from '../../database/transaction.js'
 import { TERMINAL_STATUSES } from './applications.transitions.js'
 import type {
   ListApplicationsFilters,
@@ -177,17 +178,20 @@ export class ApplicationsRepo {
   }
 
   /** Application + initial DRAFT history row + student auto-advance, atomically. */
-  static createWithHistory = async (data: {
-    publicId: string
-    studentId: string
-    programId: string
-    createdBy: string
-    intakeMonth?: IntakeMonth | undefined
-    intakeYear?: number | undefined
-    externalReference?: string | undefined
-    notes?: string | undefined
-  }) => {
-    return prisma.$transaction(async (tx) => {
+  static createWithHistory = async (
+    data: {
+      publicId: string
+      studentId: string
+      programId: string
+      createdBy: string
+      intakeMonth?: IntakeMonth | undefined
+      intakeYear?: number | undefined
+      externalReference?: string | undefined
+      notes?: string | undefined
+    },
+    outerTx?: Tx,
+  ) => {
+    return withTx(outerTx, async (tx) => {
       const application = await tx.studentApplication.create({
         data: {
           public_id: data.publicId,
@@ -241,8 +245,9 @@ export class ApplicationsRepo {
     to: ApplicationStatus,
     changedBy: string,
     note?: string,
+    outerTx?: Tx,
   ) => {
-    return prisma.$transaction(async (tx) => {
+    return withTx(outerTx, async (tx) => {
       const { count } = await tx.studentApplication.updateMany({
         where: { id, status: from },
         data: { status: to },
@@ -266,8 +271,12 @@ export class ApplicationsRepo {
     })
   }
 
-  static updateDetails = async (id: string, data: UpdateApplicationDTO) => {
-    return prisma.studentApplication.update({
+  static updateDetails = async (
+    id: string,
+    data: UpdateApplicationDTO,
+    db: Db = prisma,
+  ) => {
+    return db.studentApplication.update({
       where: { id },
       ...withRelations,
       data: {

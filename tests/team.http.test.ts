@@ -6,6 +6,7 @@ import { generateAcessToken } from '../src/common/security/token'
 import AuthRepo from '../src/modules/auth/auth.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import { TeamService } from '../src/modules/team/team.service'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ function body<T = unknown>(res: { body: unknown }): ApiBody<T> {
 
 const authRepoMock = vi.mocked(AuthRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -395,6 +398,26 @@ describe('Team API — DELETE /api/v1/team/invitations/:id', () => {
 
     expect(res.status).toBe(200)
     expect(body(res).success).toBe(true)
+    // The invited user is hard-deleted, so the audit row keeps a snapshot of
+    // who they were — and the actor comes from the authenticated request.
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'team.invitation_canceled',
+        entity_type: 'invitation',
+        entity_id: 'USR-0002',
+        actor_id: ADMIN_ID,
+        actor_role: 'ADMIN',
+        before_data: {
+          publicId: 'USR-0002',
+          fullName: 'Bob Invited',
+          email: 'bob@example.com',
+          phone: null,
+          role: 'ADVISOR',
+          status: 'INVITED',
+        },
+      }),
+    )
   })
 
   it('returns 404 if invitation not found', async () => {
@@ -610,6 +633,18 @@ describe('Team API — PATCH /api/v1/team/:userId/status', () => {
     const b = body<{ status: string }>(res)
     expect(res.status).toBe(200)
     expect(b.data.status).toBe('DISABLED')
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'team.member_status_changed',
+        entity_type: 'user',
+        entity_id: 'USR-0001',
+        actor_id: ADMIN_ID,
+        before_data: { status: 'ACTIVE' },
+        after_data: { status: 'DISABLED' },
+        request_id: expect.any(String),
+      }),
+    )
   })
 
   it('returns 409 if status is already the same', async () => {
@@ -623,6 +658,8 @@ describe('Team API — PATCH /api/v1/team/:userId/status', () => {
 
     expect(res.status).toBe(409)
     expect(body(res).error?.code).toBe('CONFLICT')
+    // A rejected change is never audited.
+    expect(auditRepoMock.record).not.toHaveBeenCalled()
   })
 
   it('returns 400 for invalid status value', async () => {
@@ -763,6 +800,7 @@ describe('TeamService.ResendInvitation — unit', () => {
     expect(result.sendCount).toBe(4)
     expect(teamRepoMock.UpdateTeamInvitation).toHaveBeenCalledWith(
       expect.objectContaining({ count: 4 }),
+      expect.anything(),
     )
   })
 })
@@ -786,6 +824,7 @@ describe('TeamService.CancelInvitation — unit', () => {
     expect(teamRepoMock.CancelInvitation).toHaveBeenCalledWith(
       'invite-uuid-0001',
       'invited-user-uuid-0001',
+      expect.anything(),
     )
   })
 

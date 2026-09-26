@@ -57,6 +57,7 @@ model Users {
   created_applications          StudentApplication[]
   application_status_changes    ApplicationStatusHistory[]
   student_status_changes        StudentStatusHistory[]
+  audit_logs                    AuditLog[]
 
   @@map("users")
 }
@@ -735,4 +736,36 @@ model StudentStatusHistory {
 
   @@index([student_id, created_at(sort: Desc)])
   @@map("student_status_history")
-}
+}
+// ==========================================
+// AUDIT LOGS
+// ==========================================
+
+// Append-only record of who changed business data. The app only ever inserts
+// rows (no update/delete paths). entity_id is a public ID and deliberately not
+// an FK: e.g. canceling an invitation hard-deletes the invited user, and the
+// audit row (with its snapshot) must outlive it. action is a varchar backed by
+// the AUDIT_ACTIONS const rather than a DB enum, since the list grows.
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  actor_id    String?   @db.Uuid // null = system or unauthenticated (e.g. failed login)
+  actor_role  UserRole? // role at the time of the action
+  action      String    @db.VarChar(80)
+  entity_type String    @db.VarChar(40)
+  entity_id   String?   @db.VarChar(64)
+  before_data Json?
+  after_data  Json?
+  metadata    Json?
+  request_id  String?   @db.VarChar(64)
+  ip_address  String?   @db.VarChar(45)
+  user_agent  String?   @db.VarChar(255)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  actor Users? @relation(fields: [actor_id], references: [id], onDelete: Restrict)
+
+  @@index([created_at(sort: Desc)])
+  @@index([entity_type, entity_id, created_at(sort: Desc)])
+  @@index([actor_id, created_at(sort: Desc)])
+  @@index([action, created_at(sort: Desc)])
+  @@map("audit_logs")
+}

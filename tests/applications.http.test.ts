@@ -8,6 +8,7 @@ import { StudentsRepo } from '../src/modules/students/students.repository'
 import { ProgramsRepo } from '../src/modules/programs/programs.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import { ApplicationsRepo } from '../src/modules/applications/applications.repository'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,8 @@ const studentsRepoMock = vi.mocked(StudentsRepo)
 const programsRepoMock = vi.mocked(ProgramsRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
 const applicationsRepoMock = vi.mocked(ApplicationsRepo)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -230,6 +233,7 @@ describe('Applications API — POST /api/v1/students/:studentId/applications', (
         intakeMonth: 'SEPTEMBER',
         intakeYear: 2026,
       }),
+      expect.anything(),
     )
     const data = body<Record<string, any>>(res).data
     expect(data['publicId']).toBe('APP-1048')
@@ -373,8 +377,22 @@ describe('Applications API — PATCH /api/v1/applications/:applicationId/status'
       'DOCUMENTS_PENDING',
       ADVISOR_ID,
       'Transcript requested',
+      expect.anything(),
     )
     expect(body<{ status: string }>(res).data.status).toBe('DOCUMENTS_PENDING')
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'application.status_changed',
+        entity_type: 'application',
+        entity_id: 'APP-1048',
+        actor_id: ADVISOR_ID,
+        actor_role: 'ADVISOR',
+        before_data: { status: 'DRAFT' },
+        after_data: { status: 'DOCUMENTS_PENDING' },
+        metadata: { note: 'Transcript requested' },
+      }),
+    )
   })
 
   it('allows skipping forward', async () => {
@@ -446,6 +464,8 @@ describe('Applications API — PATCH /api/v1/applications/:applicationId/status'
 
     expect(res.status).toBe(409)
     expect(body(res).error?.code).toBe('CONFLICT')
+    // Thrown inside the transaction: the lost race writes no audit row.
+    expect(auditRepoMock.record).not.toHaveBeenCalled()
   })
 
   it('returns 403 for an ADVISOR the student is not assigned to', async () => {

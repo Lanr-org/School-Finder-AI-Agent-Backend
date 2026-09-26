@@ -6,6 +6,8 @@ import {
   type SettingValue,
 } from '../../generated/prisma/index.js'
 import { SettingsRepo } from './settings.repository.js'
+import { AuditService } from '../audit/audit.service.js'
+import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
 import type {
   CreateSettingValueDTO,
   UpdateSettingValueDTO,
@@ -72,10 +74,16 @@ export class SettingsService {
     const key = slugify(dto.label)
 
     try {
-      const value = await SettingsRepo.createValue(group.id, {
-        key,
-        label: dto.label,
-      })
+      const value = await AuditService.withAudit(
+        (tx) =>
+          SettingsRepo.createValue(group.id, { key, label: dto.label }, tx),
+        (created) => ({
+          action: AUDIT_ACTIONS.SETTING_VALUE_CREATED,
+          entityType: 'setting_value',
+          entityId: created.id,
+          after: { groupKey, ...toValueResponse(created) },
+        }),
+      )
       return toValueResponse(value)
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -98,8 +106,17 @@ export class SettingsService {
     valueId: string,
     dto: UpdateSettingValueDTO,
   ) => {
-    await SettingsService.getValueOrThrow(groupKey, valueId)
-    const updated = await SettingsRepo.updateValue(valueId, dto)
+    const existing = await SettingsService.getValueOrThrow(groupKey, valueId)
+    const updated = await AuditService.withAudit(
+      (tx) => SettingsRepo.updateValue(valueId, dto, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.SETTING_VALUE_UPDATED,
+        entityType: 'setting_value',
+        entityId: valueId,
+        before: { groupKey, ...toValueResponse(existing) },
+        after: { groupKey, ...toValueResponse(after) },
+      }),
+    )
     return toValueResponse(updated)
   }
 
@@ -116,6 +133,14 @@ export class SettingsService {
       )
     }
 
-    await SettingsRepo.deleteValue(valueId)
+    await AuditService.withAudit(
+      (tx) => SettingsRepo.deleteValue(valueId, tx),
+      () => ({
+        action: AUDIT_ACTIONS.SETTING_VALUE_DELETED,
+        entityType: 'setting_value',
+        entityId: valueId,
+        before: { groupKey, ...toValueResponse(value) },
+      }),
+    )
   }
 }

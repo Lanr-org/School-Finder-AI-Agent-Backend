@@ -13,6 +13,8 @@ import type { AccessTokenClaims } from '../auth/auth.types.js'
 import { ProgramsRepo } from '../programs/programs.repository.js'
 import { StudentsService } from '../students/students.service.js'
 import TeamRepo from '../team/team.repository.js'
+import { AuditService } from '../audit/audit.service.js'
+import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
 import {
   ApplicationsRepo,
   type ApplicationWithRelations,
@@ -194,19 +196,33 @@ export class ApplicationsService {
       { studentId: student.id, programId: program.id },
       'Creating student application.',
     )
+    // withAudit sits inside the retry: a public-ID collision aborts the Postgres
+    // transaction, so each attempt needs a fresh one.
     const application = await withUniquePublicId(
       createPublicApplicationId,
       (publicId) =>
-        ApplicationsRepo.createWithHistory({
-          publicId,
-          studentId: student.id,
-          programId: program.id,
-          createdBy: auth.sub,
-          intakeMonth: dto.intakeMonth,
-          intakeYear: dto.intakeYear,
-          externalReference: dto.externalReference,
-          notes: dto.notes,
-        }),
+        AuditService.withAudit(
+          (tx) =>
+            ApplicationsRepo.createWithHistory(
+              {
+                publicId,
+                studentId: student.id,
+                programId: program.id,
+                createdBy: auth.sub,
+                intakeMonth: dto.intakeMonth,
+                intakeYear: dto.intakeYear,
+                externalReference: dto.externalReference,
+                notes: dto.notes,
+              },
+              tx,
+            ),
+          (created) => ({
+            action: AUDIT_ACTIONS.APPLICATION_CREATED,
+            entityType: 'application',
+            entityId: created.public_id,
+            after: toApplicationResponse(created),
+          }),
+        ),
     )
 
     return toApplicationResponse(application)
@@ -338,21 +354,37 @@ export class ApplicationsService {
       },
       'Updating application status.',
     )
-    const updated = await ApplicationsRepo.updateStatus(
-      application.id,
-      application.status,
-      dto.status,
-      auth.sub,
-      dto.note,
+    // A lost race throws inside the transaction, so nothing — including the
+    // audit row — is committed for a change that didn't happen.
+    const updated = await AuditService.withAudit(
+      async (tx) => {
+        const result = await ApplicationsRepo.updateStatus(
+          application.id,
+          application.status,
+          dto.status,
+          auth.sub,
+          dto.note,
+          tx,
+        )
+        if (!result) {
+          throw createError(
+            'Application status changed since it was loaded — refresh and retry',
+            409,
+            {},
+            'CONFLICT',
+          )
+        }
+        return result
+      },
+      (after) => ({
+        action: AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED,
+        entityType: 'application',
+        entityId: application.public_id,
+        before: { status: application.status },
+        after: { status: after.status },
+        ...(dto.note !== undefined && { metadata: { note: dto.note } }),
+      }),
     )
-    if (!updated) {
-      throw createError(
-        'Application status changed since it was loaded — refresh and retry',
-        409,
-        {},
-        'CONFLICT',
-      )
-    }
 
     return toApplicationResponse(updated)
   }

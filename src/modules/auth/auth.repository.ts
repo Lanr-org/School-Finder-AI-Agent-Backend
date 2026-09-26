@@ -1,5 +1,6 @@
 import { createError } from '../../common/errors/AppError'
 import prisma from '../../database/prisma'
+import { withTx, type Db, type Tx } from '../../database/transaction'
 import type {
   AuthSessionDbData,
   ChangePasswordTransactionData,
@@ -76,8 +77,8 @@ class AuthRepo {
     })
   }
 
-  static async revokeAuthSession(sessionId: string) {
-    await prisma.auth_Sessions.update({
+  static async revokeAuthSession(sessionId: string, db: Db = prisma) {
+    await db.auth_Sessions.update({
       where: {
         id: sessionId,
         revoked_at: null,
@@ -86,8 +87,8 @@ class AuthRepo {
     })
   }
 
-  static async revokeAuthSessionFamily(userId: string) {
-    await prisma.auth_Sessions.updateMany({
+  static async revokeAuthSessionFamily(userId: string, db: Db = prisma) {
+    await db.auth_Sessions.updateMany({
       where: {
         user_id: userId,
         revoked_at: null,
@@ -108,8 +109,9 @@ class AuthRepo {
 
   static async changePasswordAndRotateSessions(
     data: ChangePasswordTransactionData,
+    outerTx?: Tx,
   ) {
-    return prisma.$transaction(async (tx) => {
+    return withTx(outerTx, async (tx) => {
       const updatedUser = await tx.users.update({
         where: { id: data.userId },
         data: {
@@ -181,8 +183,9 @@ class AuthRepo {
 
   static async resetPasswordAndRevokeSessions(
     data: ResetPasswordTransactionData,
+    outerTx?: Tx,
   ) {
-    return prisma.$transaction(async (tx) => {
+    return withTx(outerTx, async (tx) => {
       const consumedToken = await tx.password_Reset_Tokens.updateMany({
         where: {
           id: data.resetTokenId,
@@ -227,8 +230,9 @@ class AuthRepo {
 
   static async UpdateInvitationAndUserPassword(
     data: UpdateInvitationAndUserPasswordData,
+    outerTx?: Tx,
   ) {
-    await prisma.$transaction(async (tx) => {
+    await withTx(outerTx, async (tx) => {
       await tx.users.update({
         where: { id: data.userId },
         data: {

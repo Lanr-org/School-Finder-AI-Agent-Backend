@@ -502,6 +502,12 @@ GET    /api/v1/dashboard/summary
 GET    /api/v1/search?q=     # applies the authenticated user's authorization scope
 ```
 
+### Audit
+
+```
+GET    /api/v1/audit-logs    # ADMIN only; filters: action, entityType, entityId, actorId, from, to
+```
+
 ---
 
 ## Query Conventions
@@ -622,6 +628,15 @@ Log fields: request ID, authenticated user ID, route + method, response status, 
 Audit these actions: login failures, session revocation, invitation CRUD, role/permission/status changes, advisor assignment, student/application status changes, school/program CRUD, settings and recommendation-weight changes.
 
 Redact from all logs: passwords, tokens, auth headers, cookies, SMTP credentials, Telegram bot tokens.
+
+### How audit logging is implemented (`src/modules/audit/`)
+
+- Action names live in `audit.actions.ts` (`AUDIT_ACTIONS`); add new ones there, never inline strings.
+- Wrap the change with `AuditService.withAudit((tx) => Repo.write(..., tx), (result) => entry)` so the business change and its audit row commit or roll back together. Audited repo methods take an optional `db`/`tx` last parameter; multi-statement repo methods use `withTx` from `src/database/transaction.ts` so they can join the caller's transaction.
+- Actor, request ID, IP, and user agent come from the per-request context (`src/common/context/requestContext.ts`), populated by `AuthenticateMiddleware`. Pass `actorId`/`actorRole` explicitly only on public routes (password reset, invitation accept) or to force "system" (`null`).
+- `before`/`after` must be allowlisted public shapes (e.g. `toSchoolResponse`), never raw rows; `sanitizeForAudit` redacts password/token/hash/secret/cookie keys as a safety net.
+- `audit_logs` is insert-only: no update or delete code paths. Read via ADMIN-only `GET /api/v1/audit-logs`.
+- Tests: `tests/setup-global-mocks.ts` mocks the transaction helpers and `AuditRepo` for every suite; assert on `AuditRepo.record` calls.
 
 ---
 

@@ -692,3 +692,46 @@ deadline). Verified by loading the real `server.ts` (HTTP + workers on Redis + P
 
 QA student STU-1927 unassigned from USR-946B7F71768D (kept as a labelled test record, now
 AWAITING_ASSIGNMENT).
+
+## Audit logs (2026-09-26)
+
+BACKLOG #6 (audit part). Nothing required by AGENTS.md was audited before this.
+
+**Storage.** Migration `20260926044844_add_audit_logs`: `audit_logs` (actor, actor role, action,
+entity type + public ID, sanitized before/after/metadata JSONB, request ID, IP, user agent,
+timestamp; indexes on time, entity, actor, action). `entity_id` is not an FK — canceling an
+invitation hard-deletes the invited user, and the audit row (with its snapshot) must outlive it.
+Insert-only at the app level; no DB trigger (confirmed decision).
+
+**Mechanics.**
+- `src/common/context/requestContext.ts` — AsyncLocalStorage store per request (mounted after
+  the body/cookie parsers); `AuthenticateMiddleware` sets the actor from the verified DB user.
+  Services that never received `auth` (schools, programs, settings, weights, team update/status)
+  needed no signature changes.
+- `src/database/transaction.ts` — `runInTransaction` and `withTx`; audited repo methods take an
+  optional transaction, and multi-statement repo methods join the caller's transaction.
+- `AuditService.withAudit(fn, buildEntry)` writes the business change and its audit row in one
+  transaction — verified against the real DB that a failing audit insert rolls the change back.
+- Snapshots are the existing public response shapes; `sanitizeForAudit` redacts
+  password/token/hash/secret/cookie keys as a safety net.
+- Where it matters: failed logins record the attempted email and reason with no actor (response
+  unchanged); system revocations (expired session, device mismatch) have no actor; password reset
+  and invitation acceptance are attributed explicitly (public routes); public-ID retries open a
+  fresh transaction per attempt; a lost application-status race throws inside the transaction so
+  nothing is audited.
+
+**Read API + UI.** ADMIN-only `GET /api/v1/audit-logs` (action, entity type/ID, actor public ID,
+date range, pagination; actor UUIDs never returned), documented in OpenAPI. Frontend Audit log page
+at `/audit-log` (Admin sidebar): filters, plain-English action labels, entity links, expandable
+before → after field diff, metadata, and request/IP/user agent.
+
+**Tests.** New `vitest.config.ts` + `tests/setup-global-mocks.ts` keep every suite off the DB. New
+`audit.core.unit.test.ts` (sanitizer, context survives `express.json`, record/withAudit incl.
+rollback propagation) and `audit.http.test.ts`; per-call-site audit assertions added to the auth,
+team, students, applications, schools, and recommendations suites; ~27 repo-call assertions got the
+extra transaction argument. 435/435 passing; frontend `tsc` + `vite build` clean.
+
+Verified on QA student STU-1927 only. An early check script loaded the code as ES modules — a
+second module instance — so its forced-failure patch didn't apply: STU-1927 was briefly set to
+CLOSED for real (audited, actor null) and then restored; the corrected CommonJS run passed all
+checks. Those rows remain, as audit rows are never deleted.

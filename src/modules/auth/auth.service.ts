@@ -17,6 +17,9 @@ import EmailProvider from '../../integrations/email/email.provider'
 import { buildPasswordResetEmail } from '../../integrations/email/email.templates'
 import AuthRepo from './auth.repository'
 import TeamRepo from '../team/team.repository'
+import prisma from '../../database/prisma'
+import { AuditService } from '../audit/audit.service'
+import { AUDIT_ACTIONS } from '../audit/audit.actions'
 import type {
   AccessTokenClaims,
   ChangePasswordData,
@@ -58,11 +61,48 @@ const toSafeUser = (user: {
   }
 }
 
+type SessionRevokeReason = 'LOGOUT' | 'EXPIRED' | 'DEVICE_MISMATCH'
+
+// Revokes one session and records it in the same transaction. System-initiated
+// revocations (expiry, device mismatch during refresh) have no actor; logout is
+// attributed to the authenticated user via the request context.
+const revokeSessionWithAudit = (
+  sessionId: string,
+  reason: SessionRevokeReason,
+  ownerPublicId: string | null,
+) =>
+  AuditService.withAudit(
+    (tx) => AuthRepo.revokeAuthSession(sessionId, tx),
+    () => ({
+      action: AUDIT_ACTIONS.SESSION_REVOKED,
+      entityType: 'auth_session',
+      entityId: sessionId,
+      metadata: { reason, userPublicId: ownerPublicId },
+      ...(reason !== 'LOGOUT' && { actorId: null, actorRole: null }),
+    }),
+  )
+
 class AuthService {
   static Login = async (requestBody: LoginT) => {
     const user = await AuthRepo.findUser({ email: requestBody.email })
 
+    // Recorded before the generic error is thrown. The actor is always null (the
+    // caller isn't authenticated); the attempted email goes in metadata so
+    // repeated failures against one account are visible. Responses are unchanged.
+    const recordLoginFailure = (
+      reason: 'INVALID_CREDENTIALS' | 'ACCOUNT_INACTIVE',
+    ) =>
+      AuditService.record(prisma, {
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        entityType: 'user',
+        entityId: user?.public_id ?? null,
+        actorId: null,
+        actorRole: null,
+        metadata: { email: requestBody.email, reason },
+      })
+
     if (!user?.password_hash) {
+      await recordLoginFailure('INVALID_CREDENTIALS')
       throw createError(
         'Invalid email or password',
         401,
@@ -72,6 +112,7 @@ class AuthService {
     }
 
     if (user.status !== 'ACTIVE') {
+      await recordLoginFailure('ACCOUNT_INACTIVE')
       throw createError(
         'Account is not active',
         403,
@@ -86,6 +127,7 @@ class AuthService {
     )
 
     if (!passwordMatches) {
+      await recordLoginFailure('INVALID_CREDENTIALS')
       throw createError(
         'Invalid email or password',
         401,
@@ -147,7 +189,12 @@ class AuthService {
 
     const authExpiryDate = new Date(authSession.expires_at)
     if (authExpiryDate <= new Date()) {
-      await AuthRepo.revokeAuthSession(authSession.id)
+      const owner = await AuthRepo.findUser({ id: authSession.user_id })
+      await revokeSessionWithAudit(
+        authSession.id,
+        'EXPIRED',
+        owner?.public_id ?? null,
+      )
       throw createError(
         'Authentication session has expired, please log in again',
         401,
@@ -179,7 +226,11 @@ class AuthService {
       authSession.ip_address !== data.ipAddress ||
       authSession.user_agent !== data.userAgent
     ) {
-      await AuthRepo.revokeAuthSession(authSession.id)
+      await revokeSessionWithAudit(
+        authSession.id,
+        'DEVICE_MISMATCH',
+        user.public_id,
+      )
       throw createError(
         'Session device mismatch detected. Please log in again.',
         401,
@@ -241,7 +292,12 @@ class AuthService {
       )
     }
 
-    await AuthRepo.revokeAuthSession(findSession.id)
+    const owner = await AuthRepo.findUser({ id: findSession.user_id })
+    await revokeSessionWithAudit(
+      findSession.id,
+      'LOGOUT',
+      owner?.public_id ?? null,
+    )
   }
 
   static LogoutAll = async (data: AuthenticatedRefreshT) => {
@@ -275,7 +331,16 @@ class AuthService {
       )
     }
 
-    await AuthRepo.revokeAuthSessionFamily(data.sub)
+    const owner = await AuthRepo.findUser({ id: data.sub })
+    await AuditService.withAudit(
+      (tx) => AuthRepo.revokeAuthSessionFamily(data.sub, tx),
+      () => ({
+        action: AUDIT_ACTIONS.SESSIONS_REVOKED_ALL,
+        entityType: 'user',
+        entityId: owner?.public_id ?? null,
+        metadata: { reason: 'LOGOUT_ALL' },
+      }),
+    )
   }
 
   static UserDetails = async (data: AccessTokenClaims) => {
@@ -366,14 +431,26 @@ class AuthService {
     const newPasswordHash = await hashPassword(data.newPassword)
     const newRefreshToken = generateRefreshToken()
     const newRefreshTokenHash = hashRefreshToken(newRefreshToken)
-    const updatedUser = await AuthRepo.changePasswordAndRotateSessions({
-      userId: user.id,
-      currentSessionId: auth.session_Id,
-      newPasswordHash,
-      newRefreshTokenHash,
-      currentTokenVersion: user.token_version,
-      changedAt: new Date(),
-    })
+    const updatedUser = await AuditService.withAudit(
+      (tx) =>
+        AuthRepo.changePasswordAndRotateSessions(
+          {
+            userId: user.id,
+            currentSessionId: auth.session_Id,
+            newPasswordHash,
+            newRefreshTokenHash,
+            currentTokenVersion: user.token_version,
+            changedAt: new Date(),
+          },
+          tx,
+        ),
+      (changed) => ({
+        action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+        entityType: 'user',
+        entityId: changed.public_id,
+        metadata: { otherSessionsRevoked: true },
+      }),
+    )
 
     const accessToken = generateAcessToken(
       updatedUser.id,
@@ -562,13 +639,28 @@ class AuthService {
     const changedAt = new Date()
     const newPasswordHash = await hashPassword(data.newPassword)
 
-    await AuthRepo.resetPasswordAndRevokeSessions({
-      resetTokenId: resetToken.id,
-      userId: resetToken.user_id,
-      newPasswordHash,
-      currentTokenVersion: resetToken.user.token_version,
-      changedAt,
-    })
+    // Public route: the actor is the account owner who holds the reset link.
+    await AuditService.withAudit(
+      (tx) =>
+        AuthRepo.resetPasswordAndRevokeSessions(
+          {
+            resetTokenId: resetToken.id,
+            userId: resetToken.user_id,
+            newPasswordHash,
+            currentTokenVersion: resetToken.user.token_version,
+            changedAt,
+          },
+          tx,
+        ),
+      () => ({
+        action: AUDIT_ACTIONS.PASSWORD_RESET,
+        entityType: 'user',
+        entityId: resetToken.user.public_id,
+        actorId: resetToken.user_id,
+        actorRole: resetToken.user.role,
+        metadata: { allSessionsRevoked: true },
+      }),
+    )
 
     logger.info(
       {
@@ -686,12 +778,28 @@ class AuthService {
     const newPasswordHash = await hashPassword(data.newPassword)
     const acceptedAt = new Date()
 
-    await AuthRepo.UpdateInvitationAndUserPassword({
-      userId: invitationToken.user_id,
-      newPasswordHash,
-      acceptedAt: acceptedAt,
-      invitationId: invitationToken.id,
-    })
+    // Public route: the actor is the invitee accepting their own invitation.
+    await AuditService.withAudit(
+      (tx) =>
+        AuthRepo.UpdateInvitationAndUserPassword(
+          {
+            userId: invitationToken.user_id,
+            newPasswordHash,
+            acceptedAt: acceptedAt,
+            invitationId: invitationToken.id,
+          },
+          tx,
+        ),
+      () => ({
+        action: AUDIT_ACTIONS.INVITATION_ACCEPTED,
+        entityType: 'invitation',
+        entityId: invitationToken.user.public_id,
+        actorId: invitationToken.user_id,
+        actorRole: invitationToken.user.role,
+        before: { status: invitationToken.user.status },
+        after: { status: 'ACTIVE' },
+      }),
+    )
   }
 }
 

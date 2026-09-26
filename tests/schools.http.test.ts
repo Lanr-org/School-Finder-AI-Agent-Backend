@@ -5,6 +5,7 @@ import app from '../src/app'
 import { generateAcessToken } from '../src/common/security/token'
 import AuthRepo from '../src/modules/auth/auth.repository'
 import { SchoolsRepo } from '../src/modules/schools/schools.repository'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 import { SchoolsService } from '../src/modules/schools/schools.service'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -44,6 +45,8 @@ function body<T = unknown>(res: { body: unknown }): ApiBody<T> {
 
 const authRepoMock = vi.mocked(AuthRepo)
 const schoolsRepoMock = vi.mocked(SchoolsRepo)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -157,6 +160,7 @@ describe('Schools API — POST /api/v1/schools', () => {
     expect(schoolsRepoMock.createSchool).toHaveBeenCalledWith(
       expect.stringMatching(/^SCH-\d{4}$/),
       expect.objectContaining({ name: 'University of Toronto' }),
+      expect.anything(),
     )
   })
 
@@ -385,7 +389,18 @@ describe('Schools API — PATCH /api/v1/schools/:schoolId', () => {
     expect(schoolsRepoMock.updateSchool).toHaveBeenCalledWith(
       'school-uuid-0001',
       expect.objectContaining({ partnerStatus: 'NON_PARTNER' }),
+      expect.anything(),
     )
+    const row = auditRepoMock.record.mock.calls[0]?.[1]
+    expect(row).toMatchObject({
+      action: 'school.updated',
+      entity_type: 'school',
+      entity_id: 'SCH-1001',
+      before_data: expect.objectContaining({ partnerStatus: 'PARTNER' }),
+      after_data: expect.objectContaining({ partnerStatus: 'NON_PARTNER' }),
+    })
+    // Snapshots use the public shape: no internal UUID leaks into the log.
+    expect(JSON.stringify(row?.before_data)).not.toContain('school-uuid-0001')
   })
 
   it('returns 400 if no updatable field is provided', async () => {
@@ -446,6 +461,7 @@ describe('Schools API — DELETE /api/v1/schools/:schoolId', () => {
     expect(b.data.recordStatus).toBe('INACTIVE')
     expect(schoolsRepoMock.softDeleteSchool).toHaveBeenCalledWith(
       'school-uuid-0001',
+      expect.anything(),
     )
   })
 
@@ -588,6 +604,7 @@ describe('SchoolsService.UpdateSchool — unit', () => {
     expect(schoolsRepoMock.updateSchool).toHaveBeenCalledWith(
       'school-uuid-0001',
       expect.objectContaining({ city: 'North York' }),
+      expect.anything(),
     )
   })
 })
@@ -623,6 +640,7 @@ describe('SchoolsService.DeleteSchool — unit', () => {
 
     expect(schoolsRepoMock.softDeleteSchool).toHaveBeenCalledWith(
       'school-uuid-0001',
+      expect.anything(),
     )
     expect(result.recordStatus).toBe('INACTIVE')
   })

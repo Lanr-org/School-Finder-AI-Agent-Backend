@@ -231,10 +231,14 @@ describe('Settings API — POST /api/v1/settings/:groupKey/values', () => {
       .send({ label: 'France' })
 
     expect(res.status).toBe(201)
-    expect(settingsRepoMock.createValue).toHaveBeenCalledWith(GROUP_ID, {
-      key: 'france',
-      label: 'France',
-    })
+    expect(settingsRepoMock.createValue).toHaveBeenCalledWith(
+      GROUP_ID,
+      {
+        key: 'france',
+        label: 'France',
+      },
+      expect.anything(),
+    )
   })
 
   it('returns 409 on a duplicate label within the same group', async () => {
@@ -354,6 +358,9 @@ describe('Settings API — DELETE /api/v1/settings/:groupKey/values/:valueId', (
       .set('Authorization', `Bearer ${authToken}`)
 
     expect(res.status).toBe(200)
-    expect(settingsRepoMock.deleteValue).toHaveBeenCalledWith(VALUE_ID)
+    expect(settingsRepoMock.deleteValue).toHaveBeenCalledWith(
+      VALUE_ID,
+      expect.anything(),
+    )
   })
 })

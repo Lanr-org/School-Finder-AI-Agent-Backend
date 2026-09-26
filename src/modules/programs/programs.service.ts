@@ -2,6 +2,8 @@ import { createError } from '../../common/errors/AppError'
 import { createPublicProgramId, withUniquePublicId } from '../../common/security/publicId'
 import { SchoolsRepo } from '../schools/schools.repository'
 import { ProgramsRepo } from './programs.repository'
+import { AuditService } from '../audit/audit.service'
+import { AUDIT_ACTIONS } from '../audit/audit.actions'
 import type { Programs, ProgramIntakes } from '../../generated/prisma/index.js'
 import type { CreateProgramDTO, ListProgramsQueryDTO, UpdateProgramDTO } from './programs.types'
 
@@ -53,8 +55,17 @@ export class ProgramsService {
       throw createError('School not found', 404, {}, 'NOT_FOUND')
     }
 
+    // withAudit inside the retry: a public-ID collision aborts the transaction.
     const program = await withUniquePublicId(createPublicProgramId, (publicId) =>
-      ProgramsRepo.createProgram(publicId, school.id, data),
+      AuditService.withAudit(
+        (tx) => ProgramsRepo.createProgram(publicId, school.id, data, tx),
+        (created) => ({
+          action: AUDIT_ACTIONS.PROGRAM_CREATED,
+          entityType: 'program',
+          entityId: created.public_id,
+          after: toProgramResponse(created),
+        }),
+      ),
     )
     return toProgramResponse(program)
   }
@@ -119,7 +130,16 @@ export class ProgramsService {
       schoolId = school.id
     }
 
-    const updated = await ProgramsRepo.updateProgram(program.id, schoolId, data)
+    const updated = await AuditService.withAudit(
+      (tx) => ProgramsRepo.updateProgram(program.id, schoolId, data, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.PROGRAM_UPDATED,
+        entityType: 'program',
+        entityId: program.public_id,
+        before: toProgramResponse(program),
+        after: toProgramResponse(after),
+      }),
+    )
     return toProgramResponse(updated)
   }
 

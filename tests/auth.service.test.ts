@@ -14,6 +14,7 @@ import EmailProvider from '../src/integrations/email/email.provider'
 import AuthRepo from '../src/modules/auth/auth.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import AuthService from '../src/modules/auth/auth.service'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 
 vi.mock('../src/modules/auth/auth.repository', () => ({
   default: {
@@ -83,6 +84,11 @@ const generateAcessTokenMock = vi.mocked(generateAcessToken)
 const generateRefreshTokenMock = vi.mocked(generateRefreshToken)
 const hashRefreshTokenMock = vi.mocked(hashRefreshToken)
 const emailProviderMock = vi.mocked(EmailProvider)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
+
+// The single audit row written in a test, as inserted.
+const auditRow = () => auditRepoMock.record.mock.calls[0]?.[1]
 
 const activeUser = {
   id: '78bd6894-d3d7-405b-9443-17d376b50db1',
@@ -165,6 +171,8 @@ describe('AuthService.Login', () => {
       },
     })
     expect(authRepoMock.updateLastLogin).toHaveBeenCalledWith(activeUser.id)
+    // Successful logins are deliberately not audited (only failures are).
+    expect(auditRepoMock.record).not.toHaveBeenCalled()
   })
 
   it('rejects unknown users with a generic credentials error', async () => {
@@ -181,6 +189,15 @@ describe('AuthService.Login', () => {
       statusCode: 401,
       code: AUTH_ERROR_CODES.INVALID_CREDENTIALS,
       message: 'Invalid email or password',
+    })
+
+    // Audited without an actor or entity — and the response stays generic.
+    expect(auditRow()).toMatchObject({
+      action: 'auth.login_failed',
+      entity_type: 'user',
+      entity_id: null,
+      actor_id: null,
+      metadata: { email: 'missing@example.com', reason: 'INVALID_CREDENTIALS' },
     })
   })
 
@@ -199,6 +216,15 @@ describe('AuthService.Login', () => {
       code: AUTH_ERROR_CODES.INVALID_CREDENTIALS,
       message: 'Invalid email or password',
     })
+
+    expect(auditRow()).toMatchObject({
+      action: 'auth.login_failed',
+      entity_id: 'usr_123',
+      actor_id: null,
+      metadata: { email: 'admin@example.com', reason: 'INVALID_CREDENTIALS' },
+    })
+    // The attempted password is never recorded.
+    expect(JSON.stringify(auditRow())).not.toContain('wrong-password')
   })
 
   it('rejects inactive accounts', async () => {
@@ -217,6 +243,12 @@ describe('AuthService.Login', () => {
     ).rejects.toMatchObject({
       statusCode: 403,
       code: AUTH_ERROR_CODES.ACCOUNT_DISABLED,
+    })
+
+    expect(auditRow()).toMatchObject({
+      action: 'auth.login_failed',
+      entity_id: 'usr_123',
+      metadata: { reason: 'ACCOUNT_INACTIVE' },
     })
   })
 })
@@ -309,7 +341,16 @@ describe('AuthService.Refresh', () => {
     })
     expect(authRepoMock.revokeAuthSession).toHaveBeenCalledWith(
       activeSession.id,
+      expect.anything(),
     )
+    // System-initiated revocation: no actor, reason recorded.
+    expect(auditRow()).toMatchObject({
+      action: 'auth.session_revoked',
+      entity_type: 'auth_session',
+      entity_id: activeSession.id,
+      actor_id: null,
+      metadata: { reason: 'EXPIRED' },
+    })
   })
 
   it('rejects revoked sessions', async () => {
@@ -362,7 +403,14 @@ describe('AuthService.Refresh', () => {
     })
     expect(authRepoMock.revokeAuthSession).toHaveBeenCalledWith(
       activeSession.id,
+      expect.anything(),
     )
+    expect(auditRow()).toMatchObject({
+      action: 'auth.session_revoked',
+      entity_id: activeSession.id,
+      actor_id: null,
+      metadata: { reason: 'DEVICE_MISMATCH', userPublicId: 'usr_123' },
+    })
   })
 })
 
@@ -390,7 +438,13 @@ describe('AuthService.Logout', () => {
     )
     expect(authRepoMock.revokeAuthSession).toHaveBeenCalledWith(
       activeSession.id,
+      expect.anything(),
     )
+    expect(auditRow()).toMatchObject({
+      action: 'auth.session_revoked',
+      entity_id: activeSession.id,
+      metadata: { reason: 'LOGOUT' },
+    })
   })
 
   it('rejects missing refresh-token sessions', async () => {
@@ -448,7 +502,13 @@ describe('AuthService.LogoutAll', () => {
 
     expect(authRepoMock.revokeAuthSessionFamily).toHaveBeenCalledWith(
       activeUser.id,
+      expect.anything(),
     )
+    expect(auditRow()).toMatchObject({
+      action: 'auth.sessions_revoked_all',
+      entity_type: 'user',
+      metadata: { reason: 'LOGOUT_ALL' },
+    })
   })
 
   it('rejects refresh sessions owned by another user', async () => {
@@ -617,14 +677,25 @@ describe('AuthService.ChangePassword', () => {
     )
     expect(hashPasswordMock).toHaveBeenCalledWith('NewCorrectPass123')
     expect(hashRefreshTokenMock).toHaveBeenCalledWith('new-raw-refresh-token')
-    expect(authRepoMock.changePasswordAndRotateSessions).toHaveBeenCalledWith({
-      userId: activeUser.id,
-      currentSessionId: activeSession.id,
-      newPasswordHash: 'new-argon-hash',
-      newRefreshTokenHash: 'new-hashed-refresh-token',
-      currentTokenVersion: 0,
-      changedAt: new Date('2026-06-21T00:00:00.000Z'),
+    expect(authRepoMock.changePasswordAndRotateSessions).toHaveBeenCalledWith(
+      {
+        userId: activeUser.id,
+        currentSessionId: activeSession.id,
+        newPasswordHash: 'new-argon-hash',
+        newRefreshTokenHash: 'new-hashed-refresh-token',
+        currentTokenVersion: 0,
+        changedAt: new Date('2026-06-21T00:00:00.000Z'),
+      },
+      expect.anything(),
+    )
+    expect(auditRow()).toMatchObject({
+      action: 'auth.password_changed',
+      entity_type: 'user',
+      metadata: { otherSessionsRevoked: true },
     })
+    // Neither the new password nor its hash is ever recorded.
+    expect(JSON.stringify(auditRow())).not.toContain('NewCorrectPass123')
+    expect(JSON.stringify(auditRow())).not.toContain('new-argon-hash')
     expect(generateAcessTokenMock).toHaveBeenCalledWith(
       activeUser.id,
       activeSession.id,
@@ -967,12 +1038,22 @@ describe('AuthService.ResetPassword', () => {
       'NewCorrectPass123',
     )
     expect(hashPasswordMock).toHaveBeenCalledWith('NewCorrectPass123')
-    expect(authRepoMock.resetPasswordAndRevokeSessions).toHaveBeenCalledWith({
-      resetTokenId: resetTokenRecord.id,
-      userId: activeUser.id,
-      newPasswordHash: 'new-argon-hash',
-      currentTokenVersion: 0,
-      changedAt: new Date('2026-06-22T00:30:00.000Z'),
+    expect(authRepoMock.resetPasswordAndRevokeSessions).toHaveBeenCalledWith(
+      {
+        resetTokenId: resetTokenRecord.id,
+        userId: activeUser.id,
+        newPasswordHash: 'new-argon-hash',
+        currentTokenVersion: 0,
+        changedAt: new Date('2026-06-22T00:30:00.000Z'),
+      },
+      expect.anything(),
+    )
+    // Public route: attributed to the account owner explicitly.
+    expect(auditRow()).toMatchObject({
+      action: 'auth.password_reset',
+      entity_id: activeUser.public_id,
+      actor_id: activeUser.id,
+      metadata: { allSessionsRevoked: true },
     })
   })
 
@@ -1118,8 +1199,11 @@ describe('AuthService.VerifyInvitationToken', () => {
     last_sent_at: new Date(),
     send_count: 1,
     user: {
+      public_id: 'USR-B0B000000001',
       full_name: 'Bob Invited',
       email: 'bob@example.com',
+      role: 'ADVISOR',
+      status: 'INVITED',
     },
   }
 
@@ -1209,8 +1293,11 @@ describe('AuthService.ResetPasswordFromInvitation', () => {
     last_sent_at: new Date(),
     send_count: 1,
     user: {
+      public_id: 'USR-B0B000000001',
       full_name: 'Bob Invited',
       email: 'bob@example.com',
+      role: 'ADVISOR',
+      status: 'INVITED',
     },
   }
 
@@ -1236,7 +1323,18 @@ describe('AuthService.ResetPasswordFromInvitation', () => {
         newPasswordHash: 'hashed-new-password',
         invitationId: 'invite-uuid',
       }),
+      expect.anything(),
     )
+    // Public route: the invitee is the actor.
+    expect(auditRow()).toMatchObject({
+      action: 'team.invitation_accepted',
+      entity_type: 'invitation',
+      entity_id: 'USR-B0B000000001',
+      actor_id: 'user-uuid',
+      actor_role: 'ADVISOR',
+      before_data: { status: 'INVITED' },
+      after_data: { status: 'ACTIVE' },
+    })
   })
 
   it('rejects password confirm mismatch', async () => {

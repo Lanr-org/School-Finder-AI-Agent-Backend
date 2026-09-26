@@ -12,6 +12,8 @@ import { buildAdvisorLookup, type AdvisorRef } from '../team/advisor-lookup.js'
 import { AdvisorsRepo } from '../advisors/advisors.repository.js'
 import { StudentsRepo } from './students.repository.js'
 import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
+import { AuditService } from '../audit/audit.service.js'
+import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
 import type {
   AssignAdvisorToStudentDTO,
   ListStudentsQueryDTO,
@@ -132,15 +134,28 @@ export class StudentsService {
     auth: AccessTokenClaims,
   ) => {
     const student = await StudentsService.getStudentByPublicId(publicId)
+    const previousAdvisor = student.assigned_advisor_id
+      ? ((await buildAdvisorLookup([student.assigned_advisor_id])).get(
+          student.assigned_advisor_id,
+        ) ?? null)
+      : null
+    const before = { status: student.status, advisor: previousAdvisor }
 
     if (dto.advisorId === null) {
       logger.info(
         { studentId: student.id },
         'Unassigning advisor from student.',
       )
-      const updated = await StudentsRepo.unassignAdvisorFromStudent(
-        student.id,
-        auth.sub,
+      const updated = await AuditService.withAudit(
+        (tx) =>
+          StudentsRepo.unassignAdvisorFromStudent(student.id, auth.sub, tx),
+        (after) => ({
+          action: AUDIT_ACTIONS.ADVISOR_UNASSIGNED,
+          entityType: 'student',
+          entityId: student.public_id,
+          before,
+          after: { status: after.status, advisor: null },
+        }),
       )
       return toStudentResponse(
         { ...updated, contact: student.contact },
@@ -174,17 +189,27 @@ export class StudentsService {
       { studentId: student.id, advisorId: advisor.id },
       'Assigning advisor to student.',
     )
-    const updated = await StudentsRepo.assignAdvisorToStudent(
-      student.id,
-      advisor.id,
-      auth.sub,
+    const advisorRef = {
+      publicId: advisor.public_id,
+      fullName: advisor.full_name,
+    }
+    const updated = await AuditService.withAudit(
+      (tx) =>
+        StudentsRepo.assignAdvisorToStudent(
+          student.id,
+          advisor.id,
+          auth.sub,
+          tx,
+        ),
+      (after) => ({
+        action: AUDIT_ACTIONS.ADVISOR_ASSIGNED,
+        entityType: 'student',
+        entityId: student.public_id,
+        before,
+        after: { status: after.status, advisor: advisorRef },
+      }),
     )
-    const advisorLookup = new Map([
-      [
-        advisor.id,
-        { publicId: advisor.public_id, fullName: advisor.full_name },
-      ],
-    ])
+    const advisorLookup = new Map([[advisor.id, advisorRef]])
     return toStudentResponse(
       { ...updated, contact: student.contact },
       advisorLookup,
@@ -216,12 +241,33 @@ export class StudentsService {
       { studentId: student.id, newStatus },
       'Updating student lifecycle status.',
     )
-    const updated = await StudentsRepo.updateStudentStatus(
-      student.id,
-      newStatus,
-      auth.sub,
-      note,
-    )
+    // Same-status requests are a no-op (no history row), so nothing to audit.
+    const updated =
+      student.status === newStatus
+        ? await StudentsRepo.updateStudentStatus(
+            student.id,
+            newStatus,
+            auth.sub,
+            note,
+          )
+        : await AuditService.withAudit(
+            (tx) =>
+              StudentsRepo.updateStudentStatus(
+                student.id,
+                newStatus,
+                auth.sub,
+                note,
+                tx,
+              ),
+            (after) => ({
+              action: AUDIT_ACTIONS.STUDENT_STATUS_CHANGED,
+              entityType: 'student',
+              entityId: student.public_id,
+              before: { status: student.status },
+              after: { status: after.status },
+              ...(note !== undefined && { metadata: { note } }),
+            }),
+          )
     const advisorLookup = await buildAdvisorLookup([
       updated.assigned_advisor_id,
     ])

@@ -2,6 +2,7 @@ import prisma from '../../database/prisma.js'
 import { StudentStatus, type Prisma } from '../../generated/prisma/index.js'
 import { ListStudentsFilters, UpdateStudentPreferencesDTO } from './students.types.js'
 import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
+import { withTx, type Tx } from '../../database/transaction.js'
 
 const withContact = { include: { contact: true } } as const
 
@@ -65,8 +66,9 @@ export class StudentsRepo {
     status: StudentStatus,
     changedBy: string,
     note?: string,
+    outerTx?: Tx,
   ) => {
-    return prisma.$transaction(async (tx) => {
+    return withTx(outerTx, async (tx) => {
       await StudentStatusHistoryRepo.transition(tx, { studentId, to: status, source: 'MANUAL', changedBy, note })
       return tx.student.findUniqueOrThrow({ where: { id: studentId } })
     })
@@ -77,8 +79,13 @@ export class StudentsRepo {
    * reassigning a student already in FOLLOW_UP/APPLICATION_STARTED keeps their
    * status (previously this always reset them to ASSIGNED).
    */
-  static assignAdvisorToStudent = async (studentId: string, advisorId: string, changedBy: string) => {
-    return prisma.$transaction(async (tx) => {
+  static assignAdvisorToStudent = async (
+    studentId: string,
+    advisorId: string,
+    changedBy: string,
+    outerTx?: Tx,
+  ) => {
+    return withTx(outerTx, async (tx) => {
       await tx.student.update({ where: { id: studentId }, data: { assigned_advisor_id: advisorId } })
       await StudentStatusHistoryRepo.transition(tx, {
         studentId,
@@ -95,8 +102,8 @@ export class StudentsRepo {
    * Clears a student's advisor assignment and moves them back to AWAITING_ASSIGNMENT —
    * except COMPLETED/CLOSED students, which keep their status (unassigning must not reopen them).
    */
-  static unassignAdvisorFromStudent = async (studentId: string, changedBy: string) => {
-    return prisma.$transaction(async (tx) => {
+  static unassignAdvisorFromStudent = async (studentId: string, changedBy: string, outerTx?: Tx) => {
+    return withTx(outerTx, async (tx) => {
       await tx.student.update({ where: { id: studentId }, data: { assigned_advisor_id: null } })
       await StudentStatusHistoryRepo.transition(tx, {
         studentId,

@@ -44,6 +44,13 @@ const fakeTx = {
   },
 }
 
+// This file exercises the real repositories against the in-memory fake below,
+// so it needs the real transaction helpers (not the global pass-through mock);
+// they route through the mocked prisma.$transaction.
+vi.mock('../src/database/transaction', async (importOriginal) =>
+  importOriginal(),
+)
+
 vi.mock('../src/database/prisma', () => ({
   default: {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(fakeTx)),
