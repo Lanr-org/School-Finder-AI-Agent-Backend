@@ -671,3 +671,24 @@ since faking setTimeout also stalls supertest), note cases in `students.http.tes
 `student-status-history.unit.test.ts`. 411/411 passing; frontend `tsc` + `vite build` clean.
 
 Graceful shutdown (Prisma/BullMQ not closed on SIGTERM) logged as BACKLOG 5e.
+
+## Graceful shutdown (2026-09-26)
+
+BACKLOG 5e. Previously SIGTERM/SIGINT only called `server.close()`: Prisma, the two BullMQ
+workers, and the two queues (each holding Redis connections) were never closed, and there was
+no bound on in-flight requests. `src/shutdown.ts` (`createShutdown`, dependencies injected so
+it's unit-testable) now runs the AGENTS.md order: stop accepting connections and drain
+in-flight requests (10s, then `closeAllConnections`) → close workers (active job may finish) →
+close queues (Redis) → `prisma.$disconnect()` → exit. A 25s hard deadline (unref'd timer) forces
+`exit(1)` before a typical 30s SIGKILL; a failing step is logged and the remaining steps still
+run; a repeated signal is ignored; exit code is 1 if anything was forced or failed. `server.ts`
+wires it for SIGTERM/SIGINT; the SIGABRT handler was dropped (abort() is a crash, not a
+shutdown request). A job cut off by the deadline is left stalled and retried by BullMQ.
+
+Tests: `tests/shutdown.unit.test.ts` (order, repeated signal, forced drain, failing step, hard
+deadline). Verified by loading the real `server.ts` (HTTP + workers on Redis + Prisma), hitting
+`/health/ready` (200), then triggering the SIGTERM handler: clean exit 0 in ~30–60ms.
+416/416 passing.
+
+QA student STU-1927 unassigned from USR-946B7F71768D (kept as a labelled test record, now
+AWAITING_ASSIGNMENT).
