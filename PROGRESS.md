@@ -735,3 +735,32 @@ Verified on QA student STU-1927 only. An early check script loaded the code as E
 second module instance — so its forced-failure patch didn't apply: STU-1927 was briefly set to
 CLOSED for real (audited, actor null) and then restored; the corrected CommonJS run passed all
 checks. Those rows remain, as audit rows are never deleted.
+
+## API docs split per feature + full backfill (2026-09-26)
+
+BACKLOG 5b. The single `src/config/openapi.ts` (~1,780 lines, 36 of 90 operations documented, one
+of them wrong) is replaced by:
+- `src/docs/registry.ts` — the shared registry plus common building blocks (error envelope,
+  `errorContent()`, `successEnvelope()`, pagination, staff ref, empty success). It now calls
+  `extendZodWithOpenApi(z)` itself: the old file only worked because of import order.
+- `src/docs/document.ts` — calls every feature's `registerXDocs(registry)` in a fixed order;
+  components shared across features (e.g. `StudentIdParams`, `SchoolIdParams`, the student and
+  follow-up list responses) are returned by the registering feature and passed in.
+- One `<feature>.docs.ts` per module (19 files, largest 712 lines).
+
+Phase A (the split) was checked by deep-comparing the generated document against a snapshot taken
+before any move: identical (24 paths, 43 schemas). Phase C then documented the ~58 missing routes
+(team, students, notes, follow-ups, advisors, conversations, recommendations + weights, settings,
+bulletins, visa rates, Telegram webhook) from each module's runtime Zod schemas, with response
+schemas mirroring the services' `toXResponse` mappers, role/ownership rules, audited actions, and
+400/401/403/404/409 cases. The wrong `POST /api/v1/team` entry is replaced by the real 7 team
+routes. Result: 68 paths / 90 operations / 114 schemas.
+
+`tests/openapi.test.ts` walks every mounted router (Express 5 `router.stack`) and fails if a route
+is undocumented, if a documented route doesn't exist, if a router is mounted in `app.ts` but
+missing from the test's map, or if a router yields no routes. AGENTS.md's Definition of Done and
+folder map updated. 440/440 tests passing.
+
+Found while documenting (BACKLOG 5f, not fixed here): `unassigned=false` is coerced to true on
+`GET /conversations`; `GET /students/:id/recommendations` has two response shapes; team routes lack
+param validation; the Telegram webhook uses its own error shape.

@@ -91,10 +91,11 @@ src/
                              #   auth · users · team · advisors · students · followUps
                              #   schools · programs · applications · conversations
                              #   recommendations · notifications · settings · dashboard · audit
-                             # each: routes · controller · service · repository · schemas · types
+                             # each: routes · controller · service · repository · schemas · types · docs
   integrations/              # email/ · telegram/ · ai/
   jobs/                      # queues.ts + workers/ (email, followUpReminder, telegram, recommendation)
-  docs/                      # registry.ts, document.ts (OpenAPI builder)
+  docs/                      # registry.ts (shared registry + building blocks),
+                             #   document.ts (calls every feature's registerXDocs)
 
 prisma/                      # schema.prisma · seed.ts · migrations/
 tests/                       # setup.ts · factories/ · unit/ · integration/ · e2e/
@@ -531,6 +532,8 @@ Expose only when `OPENAPI_ENABLED=true`: `GET /openapi.json`, `GET /docs`.
 Every route documents: auth requirements, allowed roles, params/query/body, success/validation/auth/forbidden/not-found/conflict responses.
 Derive schemas from the same Zod schemas used at runtime. Do not expose stack traces or production-only admin details.
 
+Docs live per feature: `src/modules/<feature>/<feature>.docs.ts` exports `registerXDocs(registry)`, which `src/docs/document.ts` calls in a fixed order. Shared pieces (`errorResponseSchema`, `errorContent()`, `successEnvelope()`, `paginationSchema`, `staffRefSchema`, `emptySuccessResponseSchema`) come from `src/docs/registry.ts`. A component registered by one feature and reused by another (e.g. `StudentIdParams`) is returned from the registering function and passed in — never registered twice. `tests/openapi.test.ts` fails if any route is undocumented, or documented but not implemented.
+
 ---
 
 ## Telegram Integration
@@ -751,7 +754,7 @@ A backend module is complete when it has:
 - Authorization rules.
 - Service-level business rules.
 - Consistent responses and errors.
-- OpenAPI documentation.
+- OpenAPI documentation in `<feature>.docs.ts`, registered in `src/docs/document.ts` (enforced by `tests/openapi.test.ts`).
 - Unit tests for important rules.
 - Integration tests for database behavior.
 - Audit logging where required.
