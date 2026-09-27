@@ -26,6 +26,7 @@ import { conversationsRouter } from './modules/conversations/conversations.route
 import { applicationsRouter } from './modules/applications/applications.routes'
 import { healthRouter } from './modules/health/health.routes'
 import { auditLogsRouter } from './modules/audit/audit.routes'
+import { dashboardRouter } from './modules/dashboard/dashboard.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -63,6 +64,7 @@ app.use(`${version}/recommendations`, recommendationsRouter)
 app.use(`${version}/conversations`, conversationsRouter)
 app.use(`${version}/applications`, applicationsRouter)
 app.use(`${version}/audit-logs`, auditLogsRouter)
+app.use(`${version}/dashboard`, dashboardRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)

@@ -781,3 +781,33 @@ read `details` yet, so nothing breaks; forms can now show per-field messages.
 Tests: new `errorHandler.http.test.ts` (field map, `_form`, 409 context, empty details omitted, 5xx
 stack never sent outside development); the application-transition 409 test asserts the `allowed`
 list again. 447/447 passing.
+
+## Dashboard summary with real data (2026-09-27)
+
+BACKLOG #6b. `DashboardPage.tsx` was 100% hardcoded and there was no dashboard backend. New module
+`src/modules/dashboard/` serves `GET /api/v1/dashboard/summary` (ADMIN, ADVISOR, OPERATIONS; no
+query params). Scope comes from the token, never the client: ADMIN sees everything; ADVISOR sees
+only their assigned students, those students' conversations, their own follow-ups and their own
+workload row (`scope: 'OWN'`); OPERATIONS gets organisation-wide counts and charts, with
+`pendingFollowUps` / `recentRecommendations` returned as `null` (no student-level lists).
+
+Returns lead totals (all, this week, today, today from Telegram), unassigned open leads, counts for
+all 7 statuses, the assigned share of open leads, active/escalated conversations, top 5
+destinations (country names normalised and merged, e.g. `CANADA`/`UK`), advisor workload (every
+active ADVISOR; `maxCapacity: null` = no cap), the next 5 pending follow-ups, and the top match from
+the latest 5 recommendation runs (one per student). "Today"/"this week" use Africa/Lagos, weeks
+starting Monday (`dashboard.time.ts`).
+
+A read-only real-DB check caught four bugs before commit: the advisor scope was being overwritten
+by a spread (now `AND`-combined), workload listed only advisors with a profile, the same student
+could appear twice in recent recommendations, and upper-case Telegram countries weren't merged.
+
+Frontend: `src/features/dashboard/` (React Query, refetches every 60s) and a rewritten
+`DashboardPage` with the same layout: loading/error/empty states, "My overview" for advisors,
+"Updated HH:MM (Lagos time)", clickable pipeline tiles, and links to students, programs and schools.
+"Export report" removed until reporting exists; "Review leads" opens
+`/students?status=AWAITING_ASSIGNMENT` (hidden for advisors, whose list would always be empty).
+`StudentsPage` now reads its status filter from `?status=`.
+
+Tests: Lagos day/week boundaries, HTTP scoping per role (a client can't widen an advisor's scope),
+repository behaviour. 462/462 passing; frontend `tsc` and `vite build` clean.

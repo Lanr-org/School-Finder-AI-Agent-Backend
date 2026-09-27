@@ -17,6 +17,7 @@ import { registerTelegramDocs } from '../integrations/telegram/telegram.docs'
 import { registerApplicationsDocs } from '../modules/applications/applications.docs'
 import { registerAuditDocs } from '../modules/audit/audit.docs'
 import { registerHealthDocs } from '../modules/health/health.docs'
+import { registerDashboardDocs } from '../modules/dashboard/dashboard.docs'
 
 // Every feature documents its own routes in src/modules/<feature>/<feature>.docs.ts.
 // Order is fixed here; features that share a registered component receive it
@@ -42,6 +43,7 @@ registerSettingsDocs(registry)
 registerBulletinsDocs(registry)
 registerVisaRatesDocs(registry)
 registerAuditDocs(registry)
+registerDashboardDocs(registry)
 registerHealthDocs(registry)
 registerTelegramDocs(registry)
 
