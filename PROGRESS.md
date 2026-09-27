@@ -811,3 +811,26 @@ Frontend: `src/features/dashboard/` (React Query, refetches every 60s) and a rew
 
 Tests: Lagos day/week boundaries, HTTP scoping per role (a client can't widen an advisor's scope),
 repository behaviour. 462/462 passing; frontend `tsc` and `vite build` clean.
+
+## Smetase rebrand, minimal emails, Telegram group-chat guard (2026-09-27)
+
+BACKLOG #7a (strings) and #7b. The product is now **Smetase** (Oyelowo Emmanuel's product, not
+Pikinic). Every "School Finder AI" and "Pikinic" string is replaced: emails, Telegram `/start` and
+`/help`, the `EMAIL_FROM` default, the OpenAPI title, and in the frontend the auth pages, 404 page,
+sidebar, AI message label and page title. The AI system prompt's first line no longer calls us "a
+student recruitment agency"; the rest of the prompt is unchanged.
+
+Emails: the invite and password-reset templates share one minimal layout (`renderEmail`): white
+page, "Smetase" wordmark, large headline, navy `#0B132B` pill button, a grey expiry line, and a
+footer with the fallback link. There's an inbox preheader, system fonts, and the palette sits in one
+`COLORS` constant so it can switch to the final brand blue in one place. Fixes: the invite subject
+used the HTML-escaped inviter name (`O&#39;Brien`); roles now read "Advisor" instead of "ADVISOR".
+
+Telegram: the inbound worker now ignores updates from non-private chats. Before this, adding the bot
+to a group turned the whole group into one student and the AI replied to every message. Callback
+queries were hard-coded `isGroup: false`; the schema now reads the callback chat type (optional),
+so button clicks in groups are ignored too.
+
+Tests: new `email.templates.unit.test.ts` (escaping, raw-name subject, role label, links in the
+button, fallback and plain text) and two group-chat mapper cases. 469/469 passing; frontend `tsc`
+and `vite build` clean. Backend `615253c`, frontend `25c3c3f`.
