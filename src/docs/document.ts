@@ -52,7 +52,7 @@ export const openApiDocument = new OpenApiGeneratorV31(
 ).generateDocument({
   openapi: '3.1.0',
   info: {
-    title: 'School Finder Backend API',
+    title: 'Smetase Backend API',
     version: '1.0.0',
   },
   servers: [

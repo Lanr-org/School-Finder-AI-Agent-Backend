@@ -1,6 +1,19 @@
 import type { InviteEmailData } from '../../modules/team/team.types'
 import type { PasswordResetEmailData, SendEmailData } from './email.types'
 
+// The email palette in one place. Smetase's final blue isn't decided yet, so the
+// button uses the navy base; change `ink` (or add an accent) once it's locked.
+const COLORS = {
+  ink: '#0B132B',
+  text: '#374151',
+  muted: '#6B7280',
+  line: '#E5E7EB',
+  background: '#FFFFFF',
+}
+
+// Web fonts are unreliable in email clients, so use the system stack.
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+
 const escapeHtml = (value: string): string => {
   return value
     .replaceAll('&', '&amp;')
@@ -10,59 +23,59 @@ const escapeHtml = (value: string): string => {
     .replaceAll("'", '&#39;')
 }
 
-export const buildPasswordResetEmail = (
-  data: PasswordResetEmailData,
-): SendEmailData => {
-  const fullName = escapeHtml(data.fullName)
-  const resetUrl = escapeHtml(data.resetUrl)
-  const expiresInMinutes = data.expiresInMinutes.toString()
+// ADVISOR -> Advisor
+const formatRole = (role: string): string => role.charAt(0) + role.slice(1).toLowerCase()
 
-  const text = [
-    `Hi ${data.fullName},`,
-    '',
-    `Use this link to reset your School Finder AI password. It expires in ${expiresInMinutes} minutes:`,
-    data.resetUrl,
-    '',
-    'If you did not request this, you can ignore this email.',
-    '',
-    'Pikinic School Finder AI',
-  ].join('\n')
+// All string fields must already be HTML-escaped.
+type EmailContent = {
+  title: string
+  preheader: string
+  greeting: string
+  body: string
+  action: { label: string; url: string }
+  note: string
+  footer: string
+}
 
-  const html = `<!doctype html>
+const renderEmail = (email: EmailContent): string => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Reset your password</title>
+    <meta name="color-scheme" content="light">
+    <title>${email.title}</title>
   </head>
-  <body style="margin:0;background:#F5F6F8;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F5F6F8;margin:0;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:${COLORS.background};font-family:${FONT};">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${email.preheader}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${COLORS.background};">
       <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+        <td align="center" style="padding:48px 24px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;font-family:${FONT};">
             <tr>
-              <td style="padding:28px 32px 20px;border-bottom:1px solid #E5E7EB;">
-                <div style="font-size:14px;font-weight:700;color:#045A58;letter-spacing:0;">School Finder AI</div>
-                <h1 style="margin:18px 0 0;font-size:24px;line-height:32px;color:#111827;font-weight:700;">Reset your password</h1>
+              <td style="padding:0 0 40px;font-size:15px;font-weight:700;letter-spacing:-0.01em;color:${COLORS.ink};">Smetase</td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 24px;font-size:26px;line-height:34px;font-weight:600;letter-spacing:-0.02em;color:${COLORS.ink};">${email.title}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 16px;font-size:15px;line-height:24px;color:${COLORS.text};">${email.greeting}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 32px;font-size:15px;line-height:24px;color:${COLORS.text};">${email.body}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 32px;">
+                <a href="${email.action.url}" style="display:inline-block;padding:14px 24px;border-radius:999px;background:${COLORS.ink};color:#FFFFFF;font-size:14px;font-weight:600;text-decoration:none;">${email.action.label}</a>
               </td>
             </tr>
             <tr>
-              <td style="padding:28px 32px 32px;">
-                <p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#111827;">Hi ${fullName},</p>
-                <p style="margin:0 0 24px;font-size:15px;line-height:24px;color:#374151;">We received a request to reset your School Finder AI password. Use the secure link below to choose a new password.</p>
-                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-                  <tr>
-                    <td style="border-radius:10px;background:#045A58;">
-                      <a href="${resetUrl}" style="display:inline-block;padding:12px 18px;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:700;border-radius:10px;">Reset password</a>
-                    </td>
-                  </tr>
-                </table>
-                <div style="margin:0 0 24px;padding:14px 16px;background:#E6F4F3;border:1px solid #BFE4E1;border-radius:12px;color:#034A48;font-size:14px;line-height:22px;">
-                  This link expires in ${expiresInMinutes} minutes. If it expires, request a new reset link from the login page.
-                </div>
-                <p style="margin:0 0 10px;font-size:13px;line-height:21px;color:#6B7280;">If the button does not work, copy and paste this URL into your browser:</p>
-                <p style="margin:0 0 24px;font-size:13px;line-height:20px;word-break:break-all;color:#045A58;">${resetUrl}</p>
-                <p style="margin:0;font-size:13px;line-height:21px;color:#6B7280;">If you did not request this password reset, you can ignore this email. Your current password will remain unchanged.</p>
+              <td style="padding:0 0 40px;font-size:14px;line-height:22px;color:${COLORS.muted};">${email.note}</td>
+            </tr>
+            <tr>
+              <td style="padding:24px 0 0;border-top:1px solid ${COLORS.line};font-size:12px;line-height:20px;color:${COLORS.muted};">
+                ${email.footer}<br><br>
+                Button not working? Paste this link into your browser:<br>
+                <a href="${email.action.url}" style="color:${COLORS.muted};word-break:break-all;">${email.action.url}</a>
               </td>
             </tr>
           </table>
@@ -72,88 +85,60 @@ export const buildPasswordResetEmail = (
   </body>
 </html>`
 
-  return {
-    to: data.to,
-    subject: 'Reset your School Finder AI password',
-    html,
-    text,
-  }
+export const buildPasswordResetEmail = (data: PasswordResetEmailData): SendEmailData => {
+  const expiresInMinutes = data.expiresInMinutes.toString()
+
+  const text = [
+    `Hi ${data.fullName},`,
+    '',
+    `Use this link to reset your Smetase password. It expires in ${expiresInMinutes} minutes:`,
+    data.resetUrl,
+    '',
+    "Didn't request this? You can ignore this email. Your password won't change.",
+    '',
+    'Smetase',
+  ].join('\n')
+
+  const html = renderEmail({
+    title: 'Reset your password',
+    preheader: 'Choose a new password for your Smetase account.',
+    greeting: `Hi ${escapeHtml(data.fullName)},`,
+    body: 'We received a request to reset your Smetase password. Use the button below to choose a new one.',
+    action: { label: 'Reset password', url: escapeHtml(data.resetUrl) },
+    note: `This link expires in ${expiresInMinutes} minutes.`,
+    footer: "Didn't request this? You can ignore this email. Your password won't change.",
+  })
+
+  return { to: data.to, subject: 'Reset your Smetase password', html, text }
 }
 
 export const buildInviteEmail = (data: InviteEmailData): SendEmailData => {
-  const fullName = escapeHtml(data.fullName)
   const inviterName = escapeHtml(data.inviterName)
-  const inviteUrl = escapeHtml(data.inviteUrl)
-  const roleLabel = data.role
+  const role = formatRole(data.role)
   const expiresInMinutes = data.expiresInMinutes.toString()
 
   const text = [
     `Hi ${data.fullName},`,
     '',
-    `${data.inviterName} has invited you to join Pikinic School Finder AI as ${roleLabel}.`,
-    `Use this link to accept the invitation. It expires in ${expiresInMinutes} minutes:`,
+    `${data.inviterName} has invited you to join Smetase as ${role}.`,
+    `Use this link to set your password. It expires in ${expiresInMinutes} minutes:`,
     data.inviteUrl,
     '',
-    'If you were not expecting this invitation, you can ignore this email.',
+    "Not expecting this? You can ignore this email and the account won't be activated.",
     '',
-    'Pikinic School Finder AI',
+    'Smetase',
   ].join('\n')
 
-  const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>You're invited</title>
-  </head>
-  <body style="margin:0;background:#F5F6F8;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F5F6F8;margin:0;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
-            <tr>
-              <td style="padding:28px 32px 20px;border-bottom:1px solid #E5E7EB;">
-                <div style="font-size:14px;font-weight:700;color:#045A58;letter-spacing:0;">School Finder AI</div>
-                <h1 style="margin:18px 0 0;font-size:24px;line-height:32px;color:#111827;font-weight:700;">You've been invited</h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:28px 32px 32px;">
-                <p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#111827;">Hi ${fullName},</p>
-                <p style="margin:0 0 24px;font-size:15px;line-height:24px;color:#374151;"><strong>${inviterName}</strong> has invited you to join <strong>School Finder AI</strong> with the role of <strong>${roleLabel}</strong>.</p>
-                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 12px;">
-                  <tr>
-                    <td style="border-radius:999px;background:#E6F4F3;border:1px solid #BFE4E1;">
-                      <span style="display:inline-block;padding:5px 12px;color:#034A48;font-size:12px;font-weight:700;letter-spacing:0.02em;text-transform:uppercase;">${roleLabel}</span>
-                    </td>
-                  </tr>
-                </table>
-                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:12px 0 24px;">
-                  <tr>
-                    <td style="border-radius:10px;background:#045A58;">
-                      <a href="${inviteUrl}" style="display:inline-block;padding:12px 18px;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:700;border-radius:10px;">Accept invitation</a>
-                    </td>
-                  </tr>
-                </table>
-                <div style="margin:0 0 24px;padding:14px 16px;background:#E6F4F3;border:1px solid #BFE4E1;border-radius:12px;color:#034A48;font-size:14px;line-height:22px;">
-                  This invitation expires in ${expiresInMinutes} minutes. If it expires, ask ${inviterName} to send a new one.
-                </div>
-                <p style="margin:0 0 10px;font-size:13px;line-height:21px;color:#6B7280;">If the button does not work, copy and paste this URL into your browser:</p>
-                <p style="margin:0 0 24px;font-size:13px;line-height:20px;word-break:break-all;color:#045A58;">${inviteUrl}</p>
-                <p style="margin:0;font-size:13px;line-height:21px;color:#6B7280;">If you were not expecting this invitation, you can ignore this email — no account will be created.</p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
+  const html = renderEmail({
+    title: "You're invited to Smetase",
+    preheader: `${inviterName} invited you to join Smetase.`,
+    greeting: `Hi ${escapeHtml(data.fullName)},`,
+    body: `<strong style="color:${COLORS.ink};">${inviterName}</strong> has invited you to join Smetase as ${role}. Set your password to get started.`,
+    action: { label: 'Accept invitation', url: escapeHtml(data.inviteUrl) },
+    note: `This invitation expires in ${expiresInMinutes} minutes. If it expires, ask ${inviterName} to send a new one.`,
+    footer: "Not expecting this? You can ignore this email and the account won't be activated.",
+  })
 
-  return {
-    to: data.to,
-    subject: `${inviterName} invited you to School Finder AI as ${roleLabel}`,
-    html,
-    text,
-  }
+  // Subjects are plain text, so they use the raw name (not HTML-escaped).
+  return { to: data.to, subject: `${data.inviterName} invited you to Smetase as ${role}`, html, text }
 }

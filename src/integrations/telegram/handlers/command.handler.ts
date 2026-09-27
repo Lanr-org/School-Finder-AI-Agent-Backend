@@ -65,7 +65,7 @@ export class TelegramCommandHandler {
 
         await TelegramOutboundService.sendMessage(
           chatId,
-          'Welcome to School Finder AI! 🎓\n\nTo help us find the best study opportunities for you, what level of study are you aiming for?',
+          'Welcome to Smetase! 🎓\n\nTo help us find the best study opportunities for you, what level of study are you aiming for?',
           levelKeyboard
         )
         return true
@@ -73,7 +73,7 @@ export class TelegramCommandHandler {
       case 'help':
         await TelegramOutboundService.sendMessage(
           chatId,
-          'Here is how you can use School Finder AI:\n\n• Type your questions about studying abroad.\n• Use /start to restart onboarding.'
+          'Here is how you can use Smetase:\n\n• Type your questions about studying abroad.\n• Use /start to restart onboarding.'
         )
         return true
 

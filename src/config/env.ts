@@ -18,7 +18,7 @@ const envSchema = z.object({
   SMTP_SECURE: z.stringbool().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  EMAIL_FROM: z.string().default('School Finder AI <no-reply@example.com>'),
+  EMAIL_FROM: z.string().default('Smetase <no-reply@example.com>'),
 
   // Telegram Integration
   TELEGRAM_BOT_TOKEN: z.string().optional(),

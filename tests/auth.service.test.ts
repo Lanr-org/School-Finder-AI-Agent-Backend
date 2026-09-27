@@ -833,7 +833,7 @@ describe('AuthService.ForgotPassword', () => {
     expect(emailProviderMock.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: activeUser.email,
-        subject: 'Reset your School Finder AI password',
+        subject: 'Reset your Smetase password',
         html: expect.stringContaining(
           '/reset-password/raw-reset-token',
         ) as string,

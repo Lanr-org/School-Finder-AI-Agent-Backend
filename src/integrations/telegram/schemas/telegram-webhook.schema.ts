@@ -39,6 +39,7 @@ export const telegramWebhookUpdateSchema = z.object({
         message_id: z.number().int(),
         chat: z.object({
           id: z.number().int(),
+          type: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
         }),
       }),
       data: z.string().optional(),

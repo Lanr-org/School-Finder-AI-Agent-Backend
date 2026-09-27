@@ -32,7 +32,8 @@ export class TelegramMessageMapper {
         externalChatId: update.callback_query.message.chat.id.toString(),
         externalMessageId: update.callback_query.message.message_id.toString(),
         callbackData: update.callback_query.data,
-        isGroup: false,
+        // A missing chat type is treated as private (older payloads / tests).
+        isGroup: (update.callback_query.message.chat.type ?? 'private') !== 'private',
         isCallback: true,
       }
     }

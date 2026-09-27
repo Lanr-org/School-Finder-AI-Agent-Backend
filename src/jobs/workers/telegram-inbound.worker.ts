@@ -38,6 +38,17 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       return
     }
 
+    // The bot only serves 1:1 chats for now (community-group support is BACKLOG #7e).
+    // In a group the chat id is shared, so processing would turn the whole group into
+    // one "student" and have the AI reply to every message.
+    if (messageDTO.isGroup) {
+      logger.info(
+        { updateId: update.update_id, chatId: messageDTO.externalChatId },
+        'Ignoring Telegram update from a non-private chat.'
+      )
+      return
+    }
+
     // 1. Resolve or Register Student in PostgreSQL Database
     const studentContext = await ContactsService.resolveTelegramContact(contactDTO)
 
