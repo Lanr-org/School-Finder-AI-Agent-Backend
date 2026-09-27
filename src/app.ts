@@ -27,6 +27,7 @@ import { applicationsRouter } from './modules/applications/applications.routes'
 import { healthRouter } from './modules/health/health.routes'
 import { auditLogsRouter } from './modules/audit/audit.routes'
 import { dashboardRouter } from './modules/dashboard/dashboard.routes'
+import { studentRouter } from './modules/studentAuth/studentAuth.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
 const app: Express = express()
@@ -34,7 +35,9 @@ const app: Express = express()
 app.use(requestId)
 app.use(httpLogger)
 
-app.use(cors({ origin: true, credentials: true }))
+// Only our two apps may call the API with cookies (was `origin: true`, which let any site in).
+const allowedOrigins = [env.frontendUrl, env.studentAppUrl].map((url) => new URL(url).origin)
+app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser(env.cookieSecret))
 app.use(helmet())
@@ -65,6 +68,8 @@ app.use(`${version}/conversations`, conversationsRouter)
 app.use(`${version}/applications`, applicationsRouter)
 app.use(`${version}/audit-logs`, auditLogsRouter)
 app.use(`${version}/dashboard`, dashboardRouter)
+// Student-facing API (Smetase web app); separate from the staff /students routes.
+app.use(`${version}/student`, studentRouter)
 
 // Webhook routes
 app.use(`${version}/webhooks`, telegramWebhookRouter)

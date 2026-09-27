@@ -36,6 +36,15 @@ const envSchema = z.object({
 
   // Redis / Queue
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
+
+  // Student sign-in
+  GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
+  // Separate from JWT_SECRET so a student token can never pass staff verification.
+  STUDENT_JWT_SECRET: z.string().min(32, 'STUDENT_JWT_SECRET must be at least 32 characters'),
+  STUDENT_APP_URL: z.string().url().default('http://localhost:5174'),
+}).refine((vars) => vars.STUDENT_JWT_SECRET !== vars.JWT_SECRET, {
+  message: 'STUDENT_JWT_SECRET must be different from JWT_SECRET',
+  path: ['STUDENT_JWT_SECRET'],
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -74,6 +83,10 @@ export const env = {
   centrifugoHMACSecret: parsed.data.CENTRIFUGO_HMAC_SECRET,
 
   redisUrl: parsed.data.REDIS_URL,
+
+  googleClientId: parsed.data.GOOGLE_CLIENT_ID,
+  studentJwtSecret: parsed.data.STUDENT_JWT_SECRET,
+  studentAppUrl: parsed.data.STUDENT_APP_URL,
 }
 
 export default env

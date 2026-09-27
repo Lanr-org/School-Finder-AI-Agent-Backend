@@ -216,10 +216,52 @@ model Student {
   shortlisted_programs StudentShortlist[]
   applications         StudentApplication[]
   status_history       StudentStatusHistory[]
+  identities           StudentIdentity[]
+  sessions             StudentSession[]
 
   @@index([assigned_advisor_id])
   @@index([status, created_at(sort: Desc)])
   @@map("students")
+}
+
+enum StudentIdentityProvider {
+  GOOGLE
+}
+
+// How a student signs in. A Telegram-only student gains one when they link (Stage 5).
+model StudentIdentity {
+  id            String                  @id @default(uuid()) @db.Uuid
+  student_id    String                  @db.Uuid
+  provider      StudentIdentityProvider
+  subject       String                  @db.VarChar(255) // Google `sub`, stable per Google account
+  email         String                  @db.VarChar(255) // lowercased
+  created_at    DateTime                @default(now()) @db.Timestamptz(6)
+  last_login_at DateTime?               @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@unique([student_id, provider]) // one Google account per student
+  @@index([email])
+  @@map("student_identities")
+}
+
+// Mirrors Auth_Sessions, but for students; kept separate so the two can never mix.
+model StudentSession {
+  id                 String    @id @default(uuid()) @db.Uuid
+  student_id         String    @db.Uuid
+  refresh_token_hash String    @unique @db.VarChar(64)
+  user_agent         String?
+  ip_address         String?   @db.Inet
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  last_used_at       DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("student_sessions")
 }
 
 model Conversations {

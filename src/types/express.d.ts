@@ -5,6 +5,8 @@ declare global {
     interface Request {
       id: string
       auth?: AccessTokenClaims
+      // Set only by StudentAuthenticateMiddleware; never alongside `auth`.
+      student?: { studentId: string; sessionId: string }
     }
   }
 }

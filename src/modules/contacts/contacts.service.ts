@@ -3,13 +3,9 @@ import { ProviderContactDTO } from '../../integrations/telegram/mappers/telegram
 import { ContactProvider } from '../../generated/prisma/index.js'
 import { ContactsRepo } from './contacts.repository.js'
 import { ResolvedStudentContext } from './contacts.types.js'
+import { createPublicStudentId } from '../../common/security/publicId.js'
 
 export class ContactsService {
-  private static generatePublicStudentId = (): string => {
-    const randomNum = Math.floor(1000 + Math.random() * 9000)
-    return `STU-${randomNum}`
-  }
-
   /**
    * Business Logic: Resolves a Telegram contact by coordinating repository queries.
    */
@@ -52,7 +48,7 @@ export class ContactsService {
     // 3. Handle New Student Registration via Repository
     logger.info({ providerUserId, name: contactDTO.firstName }, 'Registering new Student via Telegram.')
 
-    const publicId = ContactsService.generatePublicStudentId()
+    const publicId = createPublicStudentId()
 
     const created = await ContactsRepo.registerStudentWithContact({
       providerType,

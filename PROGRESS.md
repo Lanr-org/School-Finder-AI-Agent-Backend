@@ -834,3 +834,36 @@ so button clicks in groups are ignored too.
 Tests: new `email.templates.unit.test.ts` (escaping, raw-name subject, role label, links in the
 button, fallback and plain text) and two group-chat mapper cases. 469/469 passing; frontend `tsc`
 and `vite build` clean. Backend `615253c`, frontend `25c3c3f`.
+
+## Student Google sign-in (2026-09-27)
+
+BACKLOG #8, Stage 2 of the student web app (`Agents/smetase-web`). Students sign in with Google;
+staff auth is untouched and fully separate.
+
+- **Data** (migration `20260927170054_add_student_auth`): `student_identities` (provider enum, only
+  `GOOGLE` today; Google `sub` + lowercased email; unique per provider+subject and per student+provider)
+  and `student_sessions` (mirrors `auth_sessions`). Sign-in methods are separate from students, so
+  email/password sign-up later is a new provider value plus a password column, with no change to
+  students or sessions. A first-time Google student gets a `LIVE_CHAT` contact, a NEW student with its
+  `LEAD_CREATED` history row, a first conversation and the identity in one transaction; the `STU-` id
+  goes through `withUniquePublicId` (its generator moved to `publicId.ts`, shared with Telegram).
+- **Separation:** student access tokens use their own `STUDENT_JWT_SECRET` (startup fails if it equals
+  `JWT_SECRET`), audience `smetase-student` and a pinned HS256, so they fail every staff route and
+  staff tokens fail `StudentAuthenticateMiddleware`, which sets `req.student` and never `req.auth`.
+  The refresh cookie `smetase_student_rt` is httpOnly, SameSite=Strict and path-scoped to
+  `/api/v1/student/auth`; only its SHA-256 hash is stored; it rotates on every refresh.
+- **Routes** (`/api/v1/student`): `POST /auth/google` (verifies the Google ID token against
+  `GOOGLE_CLIENT_ID` via `google-auth-library`; the client secret isn't used), `POST /auth/refresh`,
+  `POST /auth/logout` (cookie-based, idempotent), `GET /me`.
+- **App-wide:** CORS changed from `origin: true` (any site) to an allowlist of `FRONTEND_URL` and the new
+  `STUDENT_APP_URL`; `express-rate-limit` (installed, previously unused) on sign-in (20/15 min/IP) and
+  refresh (60/15 min/IP), returning 429 `RATE_LIMITED` in the standard envelope.
+- **Frontend (smetase-web):** Google's official button (Google Identity Services), an axios client with
+  one shared refresh on 401, and a Zustand session store (access token in memory only; the cookie
+  restores the session on reload). Journey, chat, matches and Parent Pack are still mock data (Stage 3).
+
+Tests: `studentToken.unit.test.ts` (round trip, wrong secret/audience, expiry, staff↔student rejection)
+and `student-auth.http.test.ts` (new vs returning student, unverified email, validation, refresh rotation
+and revoked session, logout, token separation both ways, CORS). 490/490 passing. Verified end to end with
+a real Google account: sign-in created STU-6377 + contact + identity + session, reload refreshed the
+session, sign-out revoked it.
