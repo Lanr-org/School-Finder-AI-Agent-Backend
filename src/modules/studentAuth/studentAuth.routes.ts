@@ -1,13 +1,13 @@
 import express, { type Router } from 'express'
 import { clientInfo } from '../../middleware/clientInfo'
 import { createRateLimit } from '../../middleware/rateLimit'
-import { StudentAuthenticateMiddleware } from '../../middleware/studentAuthenticate'
 import { validate, validateRefreshToken } from '../../middleware/validate'
 import StudentAuthController from './studentAuth.controller'
 import { googleSignInSchema, studentRefreshCookieSchema } from './studentAuth.schemas'
 
-// Student-facing routes, mounted at /api/v1/student. Fully separate from the staff API:
-// student tokens only pass StudentAuthenticateMiddleware, staff tokens never do.
+// Student sign-in routes, mounted at /api/v1/student; the student's own data lives in
+// studentPortal. Fully separate from the staff API: student tokens only pass
+// StudentAuthenticateMiddleware, staff tokens never do.
 export const studentRouter: Router = express.Router()
 
 studentRouter.post(
@@ -25,4 +25,3 @@ studentRouter.post(
   StudentAuthController.Refresh,
 )
 studentRouter.post('/auth/logout', StudentAuthController.Logout)
-studentRouter.get('/me', StudentAuthenticateMiddleware, StudentAuthController.Me)

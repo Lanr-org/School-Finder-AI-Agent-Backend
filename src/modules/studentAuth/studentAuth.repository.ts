@@ -117,9 +117,6 @@ const StudentAuthRepo = {
       where: { refresh_token_hash: refreshTokenHash, revoked_at: null },
       data: { revoked_at: new Date() },
     }),
-
-  findStudentById: (studentId: string) =>
-    prisma.student.findUnique({ where: { id: studentId }, include: studentWithProfile }),
 }
 
 export default StudentAuthRepo

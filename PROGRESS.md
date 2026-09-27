@@ -867,3 +867,36 @@ and `student-auth.http.test.ts` (new vs returning student, unverified email, val
 and revoked session, logout, token separation both ways, CORS). 490/490 passing. Verified end to end with
 a real Google account: sign-in created STU-6377 + contact + identity + session, reload refreshed the
 session, sign-out revoked it.
+
+## Student portal: real profile, journey, matches and study plan (2026-09-28)
+
+BACKLOG #8, Stage 3 of the student web app. Everything in the app except the chat now comes from the
+backend.
+
+- **Data** (migration `*_add_student_choice`): `students.chosen_program_id` (FK programs, onDelete
+  SetNull) and `students.study_plan_shared_at` (first share). There was no "chosen programme" concept
+  before; a shortlist has no flag.
+- **Journey** (`studentPortal/studentJourney.ts`, pure): the furthest open application decides first
+  (DRAFT–SUBMITTED → APPLY, OFFER_RECEIVED → OFFER, VISA_PROCESSING/COMPLETED → VISA; rejected/withdrawn
+  ignored), then profile completeness (study level, destination, intake, budget, academic background,
+  English test), then shortlist/choice. ENGLISH and FUNDS aren't detectable yet (Stage 6).
+- **Routes** (`/api/v1/student`, student token only, scoped to the token's student): `GET /me` (moved
+  from studentAuth; adds profile, advisor `{ name, handling }`), `PATCH /me/profile` (Telegram codes, e.g.
+  MASTERS, UK), `GET /journey`, `GET /matches` (live `scoreProgram` over the same 300-candidate pool as
+  recommendation runs, nothing saved; top 10 plus anything shortlisted/chosen), `POST/DELETE
+  /shortlist/:programId`, `POST /choice`, `GET /study-plan`, `POST /study-plan/shared`. The staff
+  services aren't reused because of their ownership checks; the module calls the repositories.
+- **"Parent Pack" renamed "Study Plan"**: it's for anyone helping the student (parent, sponsor,
+  guardian). It shows only the programme's real tuition; living and visa costs aren't in our data and
+  aren't estimated.
+- **Scoring fix:** only an actual English result counts as evidence (`hasEnglishEvidence`: a number, or
+  WAEC), so "IELTS booked" or "Not taken yet" no longer earn the programme-fit points. Applies to staff
+  recommendation runs too.
+- **Frontend (smetase-web):** real `portalApi`; the chat stays scripted until Stage 4 but saves its
+  onboarding answers to the profile and only asks for missing fields (including a typed academic
+  background and an IELTS band follow-up); the "Demo data" badge is replaced by a "Scripted chat" tag.
+
+Tests: `studentJourney.unit.test.ts`, `student-portal.http.test.ts` (every route, validation, the
+top-10-plus-saved rule, tuition-only study plan, 401 for missing/staff tokens), English-evidence
+scorer tests. 541/541 passing. Verified with a real account: profile saved, real matches, shortlist and
+choice (MSc Economics) persisted.

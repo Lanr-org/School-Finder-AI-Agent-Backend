@@ -205,6 +205,10 @@ model Student {
   academic_background String?       @db.Text
   english_test_score  String?       @db.VarChar(100)
 
+  // The one programme the student picked (web app), and the first time they shared their Study Plan.
+  chosen_program_id     String?   @db.Uuid
+  study_plan_shared_at  DateTime? @db.Timestamptz(6)
+
   created_at          DateTime      @default(now()) @db.Timestamptz(6)
   updated_at          DateTime      @updatedAt @db.Timestamptz(6)
 
@@ -218,8 +222,11 @@ model Student {
   status_history       StudentStatusHistory[]
   identities           StudentIdentity[]
   sessions             StudentSession[]
+  // SetNull: deleting a programme clears the choice instead of blocking the delete.
+  chosen_program       Programs?      @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
 
   @@index([assigned_advisor_id])
+  @@index([chosen_program_id])
   @@index([status, created_at(sort: Desc)])
   @@map("students")
 }
@@ -413,6 +420,7 @@ model Programs {
   recommendations Recommendation[]
   shortlisted_by  StudentShortlist[]
   applications    StudentApplication[]
+  chosen_by_students Student[] @relation("StudentChosenProgram")
 
   // Entry requirements
   academic_requirements String? @db.Text

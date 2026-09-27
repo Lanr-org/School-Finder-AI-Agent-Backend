@@ -44,18 +44,6 @@ const StudentAuthController = {
       next(error)
     }
   },
-
-  Me: async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      if (!req.student) {
-        throw new Error('Student request missing session claims')
-      }
-      const student = await StudentAuthService.Me(req.student.studentId)
-      res.status(200).send(successResponse(true, 'Student retrieved', student, { requestId: req.id }))
-    } catch (error) {
-      next(error)
-    }
-  },
 }
 
 export default StudentAuthController

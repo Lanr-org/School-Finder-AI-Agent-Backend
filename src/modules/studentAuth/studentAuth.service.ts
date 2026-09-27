@@ -12,7 +12,7 @@ import type { ClientInfo, GoogleSignInInput, StudentRefreshInput, StudentSummary
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30
 
-type StudentWithProfile = NonNullable<Awaited<ReturnType<typeof StudentAuthRepo.findStudentById>>>
+type StudentWithProfile = NonNullable<Awaited<ReturnType<typeof StudentAuthRepo.findIdentity>>>['student']
 
 const toSummary = (student: StudentWithProfile): StudentSummary => ({
   publicId: student.public_id,
@@ -76,12 +76,6 @@ const StudentAuthService = {
   // Cookie-based, so it works even after the access token has expired.
   Logout: async (refreshToken: string | undefined) => {
     if (refreshToken) await StudentAuthRepo.revokeSessionByTokenHash(hashRefreshToken(refreshToken))
-  },
-
-  Me: async (studentId: string) => {
-    const student = await StudentAuthRepo.findStudentById(studentId)
-    if (!student) throw sessionEnded()
-    return toSummary(student)
   },
 }
 

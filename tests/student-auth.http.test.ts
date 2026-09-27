@@ -8,6 +8,7 @@ import { generateAcessToken } from '../src/common/security/token'
 import { hashRefreshToken } from '../src/common/security/tokenHash'
 import { verifyGoogleIdToken } from '../src/integrations/google/googleIdToken'
 import StudentAuthRepo from '../src/modules/studentAuth/studentAuth.repository'
+import StudentPortalRepo from '../src/modules/studentPortal/studentPortal.repository'
 
 vi.mock('../src/integrations/google/googleIdToken', () => ({ verifyGoogleIdToken: vi.fn() }))
 
@@ -21,9 +22,14 @@ vi.mock('../src/modules/studentAuth/studentAuth.repository', () => ({
     findSessionByTokenHash: vi.fn(),
     rotateSession: vi.fn(),
     revokeSessionByTokenHash: vi.fn(),
-    findStudentById: vi.fn(),
   },
 }))
+
+// GET /student/me now lives in the portal module; only its lookup is mocked here.
+vi.mock('../src/modules/studentPortal/studentPortal.repository', () => ({
+  default: { findStudent: vi.fn() },
+}))
+vi.mock('../src/modules/team/advisor-lookup', () => ({ buildAdvisorLookup: vi.fn(async () => new Map()) }))
 
 // Staff middleware looks up users/sessions; a student token must fail before that matters.
 vi.mock('../src/modules/auth/auth.repository', () => ({
@@ -177,7 +183,11 @@ describe('student and staff tokens stay separate', () => {
       revoked_at: null,
       expires_at: future(),
     } as never)
-    repo.findStudentById.mockResolvedValue(student)
+    vi.mocked(StudentPortalRepo).findStudent.mockResolvedValue({
+      ...(student as object),
+      target_destinations: [],
+      conversations: [],
+    } as never)
 
     const res = await request(app)
       .get('/api/v1/student/me')

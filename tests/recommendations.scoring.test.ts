@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeOverallScore,
+  hasEnglishEvidence,
   scoreBudgetFit,
   scoreIntakeFit,
   scoreProgramFit,
@@ -93,6 +94,32 @@ describe('scoreProgramFit', () => {
     )
     expect(result.score).toBe(100)
     expect(result.missingRequirements).toHaveLength(0)
+  })
+
+  it('does not count a booked or untaken English test as a score', () => {
+    for (const answer of ['IELTS booked', 'Not taken yet']) {
+      const result = scoreProgramFit(
+        makeStudent({ study_level: 'undergraduate degree', english_test_score: answer }),
+        makeProgram({ study_level: 'UNDERGRADUATE', english_requirements: 'IELTS 6.5' }),
+      )
+      expect(result.missingRequirements).toContain(
+        'English test score not provided — cannot verify against entry requirements',
+      )
+    }
+  })
+})
+
+describe('hasEnglishEvidence', () => {
+  it('accepts a band score or a WAEC English credit', () => {
+    expect(hasEnglishEvidence('IELTS 6.5')).toBe(true)
+    expect(hasEnglishEvidence('7')).toBe(true)
+    expect(hasEnglishEvidence('WAEC English credit')).toBe(true)
+  })
+
+  it('rejects answers without a result', () => {
+    expect(hasEnglishEvidence(null)).toBe(false)
+    expect(hasEnglishEvidence('IELTS booked')).toBe(false)
+    expect(hasEnglishEvidence('Not taken yet')).toBe(false)
   })
 })
 

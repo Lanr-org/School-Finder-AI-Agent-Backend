@@ -91,20 +91,4 @@ export const registerStudentAuthDocs = (registry: OpenAPIRegistry) => {
       },
     },
   })
-
-  registry.registerPath({
-    method: 'get',
-    path: '/api/v1/student/me',
-    tags: ['Student auth'],
-    security: [{ bearerAuth: [] }],
-    summary: "Get the signed-in student's profile",
-    description: `${STUDENT_AUTH_NOTE} Requires a student access token.`,
-    responses: {
-      200: {
-        description: 'Student retrieved.',
-        content: { 'application/json': { schema: successEnvelope(studentSummarySchema) } },
-      },
-      401: errorContent('Missing, invalid or expired student token, or the session has ended.'),
-    },
-  })
 }
