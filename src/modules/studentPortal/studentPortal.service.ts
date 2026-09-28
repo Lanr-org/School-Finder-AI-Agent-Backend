@@ -1,6 +1,17 @@
 import { createError } from '../../common/errors/AppError'
 import { AUTH_ERROR_CODES } from '../../common/errors/errorCodes'
-import { IntakeMonth, type StudyLevel } from '../../generated/prisma/index.js'
+import {
+  ConversationMode,
+  IntakeMonth,
+  MessageChannel,
+  MessageSenderType,
+  type ConversationMessages,
+  type StudyLevel,
+} from '../../generated/prisma/index.js'
+import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
+import { ContactsRepo } from '../contacts/contacts.repository.js'
+import { ConversationsRepo } from '../conversations/conversations.repository.js'
+import { StudentMessageService } from '../conversations/studentMessage.service.js'
 import { normalizeCountry } from '../matching/matching.normalizers.js'
 import { MatchingRepo } from '../matching/matching.repository.js'
 import { RecommendationsRepo } from '../recommendations/recommendations.repository.js'
@@ -14,13 +25,22 @@ import { buildAdvisorLookup } from '../team/advisor-lookup.js'
 import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
 import { deriveJourney, mostAdvancedOpenApplication } from './studentJourney'
 import StudentPortalRepo from './studentPortal.repository'
-import type { Journey, ProgrammeMatch, StudentMe, StudyPlan, UpdateProfileDTO } from './studentPortal.types'
+import type {
+  Journey,
+  PortalChat,
+  PortalChatMessage,
+  ProgrammeMatch,
+  StudentMe,
+  StudyPlan,
+  UpdateProfileDTO,
+} from './studentPortal.types'
 
 // Everything here is scoped to the signed-in student's id from the token. The staff
 // services aren't reused because they're guarded by staff ownership checks.
 
 const POOL_CAP = 300 // same candidate pool as recommendation runs
 const MATCH_LIMIT = 10
+const MESSAGE_LIMIT = 50
 
 const LEVEL_LABEL: Record<StudyLevel, string> = {
   UNDERGRADUATE: 'Undergraduate',
@@ -105,6 +125,22 @@ const toProgrammeMatch = (
     chosen: program.id === chosenId,
   }
 }
+
+const toChatMessage =
+  (advisorName: string | null) =>
+  (message: ConversationMessages): PortalChatMessage => ({
+    id: message.id,
+    senderType: message.sender_type,
+    senderName:
+      message.sender_type === MessageSenderType.AGENT
+        ? 'Smetase AI'
+        : message.sender_type === MessageSenderType.ADVISOR
+          ? (advisorName ?? 'Your advisor')
+          : null,
+    content: message.content,
+    channel: message.channel,
+    createdAt: message.created_at,
+  })
 
 // Scores a single programme for the student (shortlist responses and the study plan).
 const scoreOne = async (studentId: string, program: CandidateProgram) => {
@@ -252,6 +288,54 @@ const StudentPortalService = {
 
   MarkStudyPlanShared: async (studentId: string) => {
     await StudentPortalRepo.markStudyPlanShared(studentId)
+  },
+
+  // One continuous thread across all the student's conversations (and both channels).
+  GetMessages: async (studentId: string): Promise<PortalChat> => {
+    const student = await loadStudent(studentId)
+    const [messages, advisorName, current] = await Promise.all([
+      ConversationsRepo.findStudentMessages(studentId, MESSAGE_LIMIT),
+      advisorNameOf(student),
+      ConversationsRepo.findCurrentConversation(studentId),
+    ])
+    return {
+      messages: messages.map(toChatMessage(advisorName)),
+      advisorHandling: current?.mode === ConversationMode.HUMAN_ADVISOR,
+    }
+  },
+
+  // Returns the student's saved message, plus the AI reply unless an advisor has taken over.
+  SendMessage: async (studentId: string, content: string): Promise<{ messages: PortalChatMessage[] }> => {
+    const student = await loadStudent(studentId)
+    // After a resolve there's no open thread; start one, as Telegram does.
+    const conversation =
+      (await ConversationsRepo.findCurrentConversation(studentId)) ??
+      (await ContactsRepo.createStudentConversation(studentId))
+
+    const { message, reply } = await StudentMessageService.Receive({
+      conversationId: conversation.id,
+      studentId,
+      text: content,
+      channel: MessageChannel.WEB,
+    })
+
+    // Same live event the Telegram worker sends, so the staff dashboard updates.
+    await CentrifugoClient.publish('admin:dashboard', {
+      event: 'message.created',
+      data: {
+        publicId: student.public_id,
+        studentId,
+        conversationId: conversation.id,
+        firstName: student.contact.first_name,
+        text: content,
+        channel: MessageChannel.WEB,
+        isNewStudent: false,
+      },
+      timestamp: new Date().toISOString(),
+    })
+
+    const advisorName = await advisorNameOf(student)
+    return { messages: [message, ...(reply ? [reply] : [])].map(toChatMessage(advisorName)) }
   },
 }
 

@@ -1,8 +1,10 @@
 import prisma from '../../database/prisma.js'
+import { logger } from '../../config/logger.js'
 import {
   ConversationMode,
   ConversationStatus,
   MessageSenderType,
+  type MessageChannel,
   type Prisma,
 } from '../../generated/prisma/index.js'
 import type { ListConversationsFilters } from './conversations.types.js'
@@ -89,11 +91,34 @@ export class ConversationsRepo {
     })
   }
 
-  static touchLastActivity = async (id: string) => {
-    return prisma.conversations.update({
-      where: { id },
-      data: { last_activity_at: new Date() },
+  static findCurrentConversation = async (studentId: string) => {
+    // Same rule as Telegram: ESCALATED is still current; only RESOLVED closes a thread.
+    return prisma.conversations.findFirst({
+      where: {
+        student_id: studentId,
+        status: { in: [ConversationStatus.ACTIVE, ConversationStatus.ESCALATED] },
+      },
+      orderBy: { created_at: 'desc' },
     })
+  }
+
+  static findLastStudentChannel = async (conversationId: string) => {
+    const message = await prisma.conversationMessages.findFirst({
+      where: { conversation_id: conversationId, sender_type: MessageSenderType.STUDENT },
+      orderBy: { created_at: 'desc' },
+      select: { channel: true },
+    })
+    return message?.channel ?? null
+  }
+
+  // Across all the student's conversations, so a resolved thread doesn't vanish from their chat.
+  static findStudentMessages = async (studentId: string, limit = 50) => {
+    const messages = await prisma.conversationMessages.findMany({
+      where: { conversation: { student_id: studentId } },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+    })
+    return messages.reverse()
   }
 
   static findRecentMessages = async (conversationId: string, limit = 20) => {
@@ -105,13 +130,25 @@ export class ConversationsRepo {
     return messages.reverse()
   }
 
+  // Every message moves the conversation up the staff list, whoever sent it.
   static createMessage = async (
     conversationId: string,
     senderType: MessageSenderType,
     content: string,
+    channel: MessageChannel,
   ) => {
-    return prisma.conversationMessages.create({
-      data: { conversation_id: conversationId, sender_type: senderType, content },
+    const message = await prisma.conversationMessages.create({
+      data: { conversation_id: conversationId, sender_type: senderType, content, channel },
     })
+    // Separate from the insert: a failed activity bump must never lose the message.
+    await prisma.conversations
+      .update({ where: { id: conversationId }, data: { last_activity_at: new Date() } })
+      .catch((error: unknown) =>
+        logger.warn(
+          { conversationId, error: (error as Error).message },
+          'Could not update conversation last activity.',
+        ),
+      )
+    return message
   }
 }

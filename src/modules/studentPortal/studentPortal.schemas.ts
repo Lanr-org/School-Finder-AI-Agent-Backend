@@ -46,3 +46,7 @@ export const programIdParamsSchema = z.object({
 export const chooseProgrammeSchema = z.object({
   programId: z.string().trim().min(1).max(24),
 })
+
+export const sendMessageSchema = z.object({
+  content: z.string().trim().min(1).max(2000),
+})

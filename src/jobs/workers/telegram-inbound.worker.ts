@@ -8,10 +8,9 @@ import { TelegramCommandHandler } from '../../integrations/telegram/handlers/com
 import { TelegramCallbackQueryHandler } from '../../integrations/telegram/handlers/callback-query.handler.js'
 import { ContactsService } from '../../modules/contacts/contacts.service.js'
 import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
-import { ConversationsRepo } from '../../modules/conversations/conversations.repository.js'
-import { AIReplyService } from '../../modules/ai/ai-reply.service.js'
+import { StudentMessageService } from '../../modules/conversations/studentMessage.service.js'
 import { TelegramOutboundService } from '../../integrations/telegram/services/telegram-outbound.service.js'
-import { ConversationMode } from '../../generated/prisma/index.js'
+import { MessageChannel } from '../../generated/prisma/index.js'
 
 const parseRedisUrl = (url: string) => {
   const parsed = new URL(url)
@@ -72,29 +71,16 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     }
 
 
-    // 4. Generate and send an AI reply for free-text messages, but only while the
-    // conversation hasn't been escalated to a human advisor.
+    // 4. Save free-text messages and answer with the AI unless an advisor has taken over.
     if (messageDTO.textContent) {
-      const mode = await ConversationsRepo.findConversationMode(studentContext.conversationId)
-
-      if (mode === ConversationMode.AI_BOT) {
-        try {
-          const replyText = await AIReplyService.GenerateReply(
-            studentContext.conversationId,
-            studentContext.studentId,
-            messageDTO.textContent
-          )
-          await TelegramOutboundService.sendMessage(messageDTO.externalChatId, replyText)
-        } catch (error) {
-          logger.error(
-            { error: (error as Error).message, conversationId: studentContext.conversationId },
-            'AI reply generation failed.'
-          )
-          await TelegramOutboundService.sendMessage(
-            messageDTO.externalChatId,
-            "Sorry, I'm having trouble responding right now — please try again in a moment."
-          )
-        }
+      const { reply } = await StudentMessageService.Receive({
+        conversationId: studentContext.conversationId,
+        studentId: studentContext.studentId,
+        text: messageDTO.textContent,
+        channel: MessageChannel.TELEGRAM,
+      })
+      if (reply) {
+        await TelegramOutboundService.sendMessage(messageDTO.externalChatId, reply.content)
       }
     }
 
@@ -108,6 +94,7 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
         providerUserId: contactDTO.providerUserId,
         firstName: contactDTO.firstName,
         text: messageDTO.textContent || messageDTO.callbackData,
+        channel: MessageChannel.TELEGRAM,
         chatId: messageDTO.externalChatId,
         isNewStudent: studentContext.isNewStudent,
       },

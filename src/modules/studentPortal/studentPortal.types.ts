@@ -101,6 +101,22 @@ export type StudyPlan = {
   generatedAt: string
 }
 
+export type PortalChatMessage = {
+  id: string
+  senderType: 'STUDENT' | 'AGENT' | 'ADVISOR' | 'SYSTEM'
+  // "Smetase AI" for the AI, the advisor's name for advisor messages, null for the student.
+  senderName: string | null
+  content: string
+  channel: 'TELEGRAM' | 'WEB'
+  createdAt: Date
+}
+
+export type PortalChat = {
+  messages: PortalChatMessage[]
+  // true once an advisor has taken over: the AI stops replying until it's handed back.
+  advisorHandling: boolean
+}
+
 export type UpdateProfileDTO = {
   studyLevel?: string | undefined
   destinations?: string[] | undefined

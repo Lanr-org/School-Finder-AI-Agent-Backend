@@ -35,6 +35,9 @@ export const registerConversationsDocs = (registry: OpenAPIRegistry) => {
   const messageSchema = z.object({
     senderType: z.enum(['STUDENT', 'AGENT', 'ADVISOR', 'SYSTEM']),
     content: z.string(),
+    channel: z.enum(['TELEGRAM', 'WEB']).openapi({
+      description: 'Where the message came from (student) or was sent to (AI/advisor).',
+    }),
     createdAt: z.date(),
   })
 
@@ -69,7 +72,7 @@ export const registerConversationsDocs = (registry: OpenAPIRegistry) => {
       messageSchema.extend({
         delivered: z.boolean().openapi({
           description:
-            'Whether Telegram accepted the message. false means it was saved but not delivered.',
+            'false only when a Telegram send could not be queued (the reply is still saved). Web replies are always true: the student picks them up on the next poll.',
         }),
       }),
     ),
@@ -146,7 +149,7 @@ export const registerConversationsDocs = (registry: OpenAPIRegistry) => {
     tags: ['Conversations'],
     security: [{ bearerAuth: [] }],
     summary: 'Reply to the student as an advisor',
-    description: `Requires a bearer access token. ${ROLE_NOTE} Saves the reply as an ADVISOR message and sends it to the student on Telegram. If Telegram delivery fails, the reply is still saved and delivered is false.`,
+    description: `Requires a bearer access token. ${ROLE_NOTE} Saves the reply as an ADVISOR message on the channel the student last wrote from (before their first message, the one they signed up on). A Telegram reply is sent to their Telegram chat; a web reply is picked up by the web app. If a Telegram send can't be queued, the reply is still saved and delivered is false.`,
     request: {
       params: registeredConversationIdParamsSchema,
       body: {

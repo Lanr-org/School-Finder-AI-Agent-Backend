@@ -97,6 +97,24 @@ const StudentPortalController = {
       next(error)
     }
   },
+
+  GetMessages: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      send(req, res, 'Messages retrieved', await StudentPortalService.GetMessages(studentIdOf(req)))
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  SendMessage: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { content } = req.body as { content: string }
+      const result = await StudentPortalService.SendMessage(studentIdOf(req), content)
+      res.status(201).send(successResponse(true, 'Message sent', result, { requestId: req.id }))
+    } catch (error) {
+      next(error)
+    }
+  },
 }
 
 export default StudentPortalController

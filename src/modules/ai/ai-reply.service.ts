@@ -3,7 +3,7 @@ import { MatchingService } from '../matching/matching.service.js'
 import { ConversationsRepo } from '../conversations/conversations.repository.js'
 import { llmClient } from '../../integrations/llm/index.js'
 import type { LLMMessage } from '../../integrations/llm/index.js'
-import { MessageSenderType } from '../../generated/prisma/index.js'
+import { MessageSenderType, type MessageChannel } from '../../generated/prisma/index.js'
 import { STUDY_ABROAD_SYSTEM_PROMPT } from './ai.prompts.js'
 import { createError } from '../../common/errors/AppError.js'
 import {
@@ -60,14 +60,9 @@ export class AIReplyService {
   static GenerateReply = async (
     conversationId: string,
     studentId: string,
-    studentMessage: string,
-  ): Promise<string> => {
-    await ConversationsRepo.createMessage(
-      conversationId,
-      MessageSenderType.STUDENT,
-      studentMessage,
-    )
-
+    channel: MessageChannel,
+  ) => {
+    // The student's message is already saved (StudentMessageService), so `history` includes it.
     const student = await StudentsRepo.findStudentById(studentId)
     if (!student) {
       throw createError('Student not found', 404, {}, 'NOT_FOUND')
@@ -94,12 +89,11 @@ export class AIReplyService {
 
     const replyText = await llmClient.generateReply(messages, systemPrompt)
 
-    await ConversationsRepo.createMessage(
+    return ConversationsRepo.createMessage(
       conversationId,
       MessageSenderType.AGENT,
       replyText,
+      channel,
     )
-
-    return replyText
   }
 }

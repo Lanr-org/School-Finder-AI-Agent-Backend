@@ -11,6 +11,10 @@ import StudentAuthRepo from '../src/modules/studentAuth/studentAuth.repository'
 import StudentPortalRepo from '../src/modules/studentPortal/studentPortal.repository'
 import { buildAdvisorLookup } from '../src/modules/team/advisor-lookup'
 import { VisaRatesRepo } from '../src/modules/visaRates/visaRates.repository'
+import { ConversationsRepo } from '../src/modules/conversations/conversations.repository'
+import { ContactsRepo } from '../src/modules/contacts/contacts.repository'
+import { StudentMessageService } from '../src/modules/conversations/studentMessage.service'
+import { CentrifugoClient } from '../src/integrations/centrifugo/services/centrifugo.client'
 
 vi.mock('../src/modules/studentAuth/studentAuth.repository', () => ({
   default: { findSessionById: vi.fn() },
@@ -44,6 +48,18 @@ vi.mock('../src/modules/students/students.repository', () => ({
   StudentsRepo: { updateStudentPreferences: vi.fn() },
 }))
 vi.mock('../src/modules/team/advisor-lookup', () => ({ buildAdvisorLookup: vi.fn() }))
+vi.mock('../src/modules/conversations/conversations.repository', () => ({
+  ConversationsRepo: { findStudentMessages: vi.fn(), findCurrentConversation: vi.fn() },
+}))
+vi.mock('../src/modules/contacts/contacts.repository', () => ({
+  ContactsRepo: { createStudentConversation: vi.fn() },
+}))
+vi.mock('../src/modules/conversations/studentMessage.service', () => ({
+  StudentMessageService: { Receive: vi.fn() },
+}))
+vi.mock('../src/integrations/centrifugo/services/centrifugo.client', () => ({
+  CentrifugoClient: { publish: vi.fn() },
+}))
 
 const portalRepo = vi.mocked(StudentPortalRepo)
 const recRepo = vi.mocked(RecommendationsRepo)
@@ -304,8 +320,110 @@ describe('study plan', () => {
   })
 })
 
+describe('chat', () => {
+  const conversationsRepo = vi.mocked(ConversationsRepo)
+  const messageService = vi.mocked(StudentMessageService)
+
+  const makeMessage = (id: string, sender_type: string, content: string, channel = 'WEB') => ({
+    id,
+    conversation_id: 'conv-uuid',
+    sender_type,
+    content,
+    channel,
+    metadata: null,
+    created_at: new Date('2026-09-28T10:00:00Z'),
+  })
+
+  beforeEach(() => {
+    conversationsRepo.findCurrentConversation.mockResolvedValue({ id: 'conv-uuid', mode: 'AI_BOT' } as never)
+    conversationsRepo.findStudentMessages.mockResolvedValue([])
+  })
+
+  it('returns the thread with sender names and channels', async () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ assigned_advisor_id: 'advisor-uuid' }) as never)
+    advisorLookup.mockResolvedValue(new Map([['advisor-uuid', { publicId: 'USR-1', fullName: 'Amina Yusuf' }]]))
+    conversationsRepo.findStudentMessages.mockResolvedValue([
+      makeMessage('m1', 'STUDENT', 'Hi', 'TELEGRAM'),
+      makeMessage('m2', 'AGENT', 'Hello!', 'TELEGRAM'),
+      makeMessage('m3', 'ADVISOR', 'Amina here.'),
+    ] as never)
+
+    const res = await auth(request(app).get('/api/v1/student/messages'))
+    expect(res.status).toBe(200)
+    expect(conversationsRepo.findStudentMessages).toHaveBeenCalledWith(STUDENT_ID, 50)
+    expect(res.body.data.advisorHandling).toBe(false)
+    expect(
+      res.body.data.messages.map((m: { senderName: string | null; channel: string }) => [m.senderName, m.channel]),
+    ).toEqual([
+      [null, 'TELEGRAM'],
+      ['Smetase AI', 'TELEGRAM'],
+      ['Amina Yusuf', 'WEB'],
+    ])
+  })
+
+  it('reports advisorHandling once an advisor has taken over', async () => {
+    conversationsRepo.findCurrentConversation.mockResolvedValue({ id: 'conv-uuid', mode: 'HUMAN_ADVISOR' } as never)
+    const res = await auth(request(app).get('/api/v1/student/messages'))
+    expect(res.body.data.advisorHandling).toBe(true)
+  })
+
+  it('sends a message on the web channel and returns it with the AI reply', async () => {
+    messageService.Receive.mockResolvedValue({
+      message: makeMessage('m1', 'STUDENT', 'Which schools fit me?'),
+      reply: makeMessage('m2', 'AGENT', 'Here are three.'),
+    } as never)
+
+    const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: '  Which schools fit me?  ' })
+    expect(res.status).toBe(201)
+    expect(messageService.Receive).toHaveBeenCalledWith({
+      conversationId: 'conv-uuid',
+      studentId: STUDENT_ID,
+      text: 'Which schools fit me?',
+      channel: 'WEB',
+    })
+    expect(res.body.data.messages.map((m: { id: string }) => m.id)).toEqual(['m1', 'm2'])
+    expect(vi.mocked(CentrifugoClient).publish).toHaveBeenCalledWith(
+      'admin:dashboard',
+      expect.objectContaining({ event: 'message.created' }),
+    )
+  })
+
+  it('returns only the student message while an advisor is handling the chat', async () => {
+    messageService.Receive.mockResolvedValue({
+      message: makeMessage('m1', 'STUDENT', 'Are you there?'),
+      reply: null,
+    } as never)
+
+    const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: 'Are you there?' })
+    expect(res.status).toBe(201)
+    expect(res.body.data.messages).toHaveLength(1)
+  })
+
+  it('starts a new conversation when the last one was resolved', async () => {
+    conversationsRepo.findCurrentConversation.mockResolvedValue(null)
+    vi.mocked(ContactsRepo).createStudentConversation.mockResolvedValue({ id: 'new-conv-uuid' } as never)
+    messageService.Receive.mockResolvedValue({ message: makeMessage('m1', 'STUDENT', 'Hello again'), reply: null } as never)
+
+    const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: 'Hello again' })
+    expect(res.status).toBe(201)
+    expect(ContactsRepo.createStudentConversation).toHaveBeenCalledWith(STUDENT_ID)
+    expect(messageService.Receive).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'new-conv-uuid' }))
+  })
+
+  it.each([
+    ['empty', '   '],
+    ['too long', 'x'.repeat(2001)],
+  ])('rejects %s content', async (_label, content) => {
+    const res = await auth(request(app).post('/api/v1/student/messages')).send({ content })
+    expect(res.status).toBe(400)
+    expect(messageService.Receive).not.toHaveBeenCalled()
+  })
+})
+
 describe('authentication', () => {
   const routes: [string, string][] = [
+    ['get', '/api/v1/student/messages'],
+    ['post', '/api/v1/student/messages'],
     ['get', '/api/v1/student/me'],
     ['patch', '/api/v1/student/me/profile'],
     ['get', '/api/v1/student/journey'],

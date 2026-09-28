@@ -1,7 +1,7 @@
 import { logger } from '../../config/logger.js'
 import { createError } from '../../common/errors/AppError.js'
 import { assertStudentOwnership } from '../../common/security/ownership.js'
-import { MessageSenderType } from '../../generated/prisma/index.js'
+import { ContactProvider, MessageChannel, MessageSenderType } from '../../generated/prisma/index.js'
 import type { AccessTokenClaims } from '../auth/auth.types.js'
 import TeamRepo from '../team/team.repository.js'
 import { buildAdvisorLookup, type AdvisorRef } from '../team/advisor-lookup.js'
@@ -95,6 +95,7 @@ export class ConversationsService {
       messages: messages.map((message) => ({
         senderType: message.sender_type,
         content: message.content,
+        channel: message.channel,
         createdAt: message.created_at,
       })),
     }
@@ -103,21 +104,35 @@ export class ConversationsService {
   // ── POST /conversations/:conversationId/replies ─────────────────────────
   static Reply = async (publicId: string, dto: CreateReplyDTO, auth: AccessTokenClaims) => {
     const conversation = await getOwnedConversation(publicId, auth)
+    const { contact } = conversation.student
+    const isTelegramContact = contact.provider_type === ContactProvider.TELEGRAM
 
-    const message = await ConversationsRepo.createMessage(conversation.id, MessageSenderType.ADVISOR, dto.content)
-    await ConversationsRepo.touchLastActivity(conversation.id)
+    // Reply where the student last wrote; before they've written at all, where they signed up.
+    const channel =
+      (await ConversationsRepo.findLastStudentChannel(conversation.id)) ??
+      (isTelegramContact ? MessageChannel.TELEGRAM : MessageChannel.WEB)
 
-    const delivered = await TelegramOutboundService.sendMessage(
-      conversation.student.contact.provider_user_id,
+    const message = await ConversationsRepo.createMessage(
+      conversation.id,
+      MessageSenderType.ADVISOR,
       dto.content,
+      channel,
     )
-    if (!delivered) {
-      logger.error({ conversationId: conversation.public_id }, 'Advisor reply saved but Telegram delivery failed.')
+
+    // Web replies are picked up by the student's next poll. Telegram needs a Telegram chat id,
+    // which only Telegram contacts have (Stage 5 linking widens this).
+    let delivered = true
+    if (channel === MessageChannel.TELEGRAM && isTelegramContact) {
+      delivered = await TelegramOutboundService.sendMessage(contact.provider_user_id, dto.content)
+      if (!delivered) {
+        logger.error({ conversationId: conversation.public_id }, 'Advisor reply saved but Telegram delivery failed.')
+      }
     }
 
     return {
       senderType: message.sender_type,
       content: message.content,
+      channel: message.channel,
       createdAt: message.created_at,
       delivered,
     }

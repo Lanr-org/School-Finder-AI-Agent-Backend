@@ -1,7 +1,12 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
 import { emptySuccessResponseSchema, errorContent, successEnvelope } from '../../docs/registry'
-import { chooseProgrammeSchema, programIdParamsSchema, updateProfileSchema } from './studentPortal.schemas'
+import {
+  chooseProgrammeSchema,
+  programIdParamsSchema,
+  sendMessageSchema,
+  updateProfileSchema,
+} from './studentPortal.schemas'
 
 const PORTAL_NOTE =
   "Student-facing API (the Smetase web app). Requires a student access token from /api/v1/student/auth; staff tokens are rejected. Every route reads and changes only the signed-in student's own record, identified from the token."
@@ -212,6 +217,58 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         content: json(successEnvelope(studyPlanSchema.nullable())),
       },
       401: unauthorized,
+    },
+  })
+
+  const chatMessageSchema = registry.register(
+    'StudentChatMessage',
+    z.object({
+      id: z.string().uuid(),
+      senderType: z.enum(['STUDENT', 'AGENT', 'ADVISOR', 'SYSTEM']),
+      senderName: z
+        .string()
+        .nullable()
+        .openapi({ description: '"Smetase AI" for the AI, the advisor\'s name for advisor messages, null for the student.' }),
+      content: z.string(),
+      channel: z.enum(['TELEGRAM', 'WEB']),
+      createdAt: z.date(),
+    }),
+  )
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/student/messages',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: "Get the signed-in student's chat",
+    description: `${PORTAL_NOTE} The latest 50 messages across all the student's conversations and both channels (Telegram and web), oldest first. advisorHandling is true once an advisor has taken over; the AI doesn't reply until it's handed back. The web app polls this for advisor replies.`,
+    responses: {
+      200: {
+        description: 'Messages retrieved.',
+        content: json(
+          successEnvelope(z.object({ messages: z.array(chatMessageSchema), advisorHandling: z.boolean() })),
+        ),
+      },
+      401: unauthorized,
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/student/messages',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Send a chat message',
+    description: `${PORTAL_NOTE} Saves the message on the web channel. While the AI handles the conversation, its reply is generated in the same request and returned after the student's message; once an advisor has taken over, only the student's message is returned and the advisor answers later. If there's no open conversation (the last one was resolved), a new one is started. Limited to 20 messages a minute per student.`,
+    request: { body: { required: true, content: json(sendMessageSchema) } },
+    responses: {
+      201: {
+        description: "Message saved; returns it, plus the AI's reply when there is one.",
+        content: json(successEnvelope(z.object({ messages: z.array(chatMessageSchema) }))),
+      },
+      400: errorContent('Validation failed (empty, or longer than 2000 characters).'),
+      401: unauthorized,
+      429: errorContent('More than 20 messages in a minute.'),
     },
   })
 
