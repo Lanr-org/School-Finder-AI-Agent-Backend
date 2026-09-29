@@ -7,6 +7,7 @@ import { generateRefreshToken } from '../../common/security/token'
 import { hashRefreshToken } from '../../common/security/tokenHash'
 import { StudentIdentityProvider } from '../../generated/prisma/index.js'
 import { verifyGoogleIdToken } from '../../integrations/google/googleIdToken'
+import StudentLinkService from '../studentLink/studentLink.service'
 import StudentAuthRepo from './studentAuth.repository'
 import type { ClientInfo, GoogleSignInInput, StudentRefreshInput, StudentSummary } from './studentAuth.types'
 
@@ -18,7 +19,9 @@ const toSummary = (student: StudentWithProfile): StudentSummary => ({
   publicId: student.public_id,
   firstName: student.contact.first_name,
   fullName: [student.contact.first_name, student.contact.last_name].filter(Boolean).join(' '),
-  email: student.identities[0]?.email ?? student.contact.email,
+  // The Google identity's email; a Telegram identity has none.
+  email:
+    student.identities.find((i) => i.provider === StudentIdentityProvider.GOOGLE)?.email ?? student.contact.email,
 })
 
 const sessionEnded = () =>
@@ -37,8 +40,11 @@ const startSession = async (studentId: string, client: ClientInfo) => {
 }
 
 const StudentAuthService = {
-  SignInWithGoogle: async ({ credential, ...client }: GoogleSignInInput) => {
+  SignInWithGoogle: async ({ credential, linkToken, ...client }: GoogleSignInInput) => {
     const profile = await verifyGoogleIdToken(credential)
+    // Link first: the lookup below then finds the Google account on the linked (or merged)
+    // student. A bad token or refused merge doesn't block sign-in; linkOutcome reports it.
+    const linkOutcome = linkToken ? (await StudentLinkService.LinkGoogle(linkToken, profile)).outcome : undefined
     const existing = await StudentAuthRepo.findIdentity(StudentIdentityProvider.GOOGLE, profile.subject)
 
     let student: StudentWithProfile
@@ -55,7 +61,7 @@ const StudentAuthService = {
     }
 
     const tokens = await startSession(student.id, client)
-    return { ...tokens, student: toSummary(student), isNewStudent }
+    return { ...tokens, student: toSummary(student), isNewStudent, ...(linkOutcome && { linkOutcome }) }
   },
 
   // Rotates the refresh token on every use. No IP/device check (unlike staff): students

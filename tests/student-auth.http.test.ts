@@ -9,6 +9,7 @@ import { hashRefreshToken } from '../src/common/security/tokenHash'
 import { verifyGoogleIdToken } from '../src/integrations/google/googleIdToken'
 import StudentAuthRepo from '../src/modules/studentAuth/studentAuth.repository'
 import StudentPortalRepo from '../src/modules/studentPortal/studentPortal.repository'
+import StudentLinkService from '../src/modules/studentLink/studentLink.service'
 
 vi.mock('../src/integrations/google/googleIdToken', () => ({ verifyGoogleIdToken: vi.fn() }))
 
@@ -36,8 +37,11 @@ vi.mock('../src/modules/auth/auth.repository', () => ({
   default: { findUser: vi.fn(), findAuthSessionById: vi.fn() },
 }))
 
+vi.mock('../src/modules/studentLink/studentLink.service', () => ({ default: { LinkGoogle: vi.fn() } }))
+
 const repo = vi.mocked(StudentAuthRepo)
 const verifyGoogle = vi.mocked(verifyGoogleIdToken)
+const linkGoogle = vi.mocked(StudentLinkService).LinkGoogle
 
 const COOKIE = 'smetase_student_rt'
 const refreshToken = 'a'.repeat(128)
@@ -113,6 +117,47 @@ describe('POST /api/v1/student/auth/google', () => {
     const res = await request(app).post('/api/v1/student/auth/google').send({})
     expect(res.status).toBe(400)
     expect(verifyGoogle).not.toHaveBeenCalled()
+  })
+
+  it('links with a linkToken first, then signs in as the linked student', async () => {
+    verifyGoogle.mockResolvedValue(profile)
+    linkGoogle.mockResolvedValue({ outcome: 'LINKED', studentId: 'student-uuid' })
+    // After linking, the Google account is found on the Telegram student.
+    repo.findIdentity.mockResolvedValue({ id: 'identity-uuid', student } as never)
+
+    const res = await request(app)
+      .post('/api/v1/student/auth/google')
+      .send({ credential: 'google-id-token', linkToken: 'a'.repeat(43) })
+
+    expect(res.status).toBe(200)
+    expect(linkGoogle).toHaveBeenCalledWith('a'.repeat(43), profile)
+    expect(linkGoogle.mock.invocationCallOrder[0]).toBeLessThan(repo.findIdentity.mock.invocationCallOrder[0]!)
+    expect(res.body.data).toMatchObject({ linkOutcome: 'LINKED', isNewStudent: false })
+    expect(repo.registerGoogleStudent).not.toHaveBeenCalled()
+  })
+
+  it('still signs in when the link token is no good', async () => {
+    verifyGoogle.mockResolvedValue(profile)
+    linkGoogle.mockResolvedValue({ outcome: 'INVALID_TOKEN', studentId: null })
+    repo.findIdentity.mockResolvedValue(null)
+    repo.registerGoogleStudent.mockResolvedValue(student)
+
+    const res = await request(app)
+      .post('/api/v1/student/auth/google')
+      .send({ credential: 'google-id-token', linkToken: 'a'.repeat(43) })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.linkOutcome).toBe('INVALID_TOKEN')
+  })
+
+  it('leaves linkOutcome out without a linkToken', async () => {
+    verifyGoogle.mockResolvedValue(profile)
+    repo.findIdentity.mockResolvedValue({ id: 'identity-uuid', student } as never)
+
+    const res = await request(app).post('/api/v1/student/auth/google').send({ credential: 'google-id-token' })
+
+    expect(linkGoogle).not.toHaveBeenCalled()
+    expect(res.body.data).not.toHaveProperty('linkOutcome')
   })
 })
 

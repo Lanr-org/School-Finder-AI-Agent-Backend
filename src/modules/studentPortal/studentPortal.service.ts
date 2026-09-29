@@ -165,7 +165,8 @@ const StudentPortalService = {
       publicId: student.public_id,
       firstName: student.contact.first_name,
       fullName: fullNameOf(student),
-      email: student.identities[0]?.email ?? student.contact.email,
+      // The Google identity's email; a Telegram identity has none.
+      email: student.identities.find((i) => i.provider === 'GOOGLE')?.email ?? student.contact.email,
       studyLevel: student.study_level,
       destinations: student.target_destinations,
       intake:
@@ -177,6 +178,7 @@ const StudentPortalService = {
       englishTest: student.english_test_score,
       advisor: advisorName ? { name: advisorName, handling: mode === 'HUMAN_ADVISOR' } : null,
       conversationMode: mode,
+      telegramLinked: student.identities.some((i) => i.provider === 'TELEGRAM'),
     }
   },
 

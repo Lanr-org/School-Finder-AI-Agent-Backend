@@ -227,6 +227,7 @@ model Student {
   status_history       StudentStatusHistory[]
   identities           StudentIdentity[]
   sessions             StudentSession[]
+  link_tokens          StudentLinkToken[]
   // SetNull: deleting a programme clears the choice instead of blocking the delete.
   chosen_program       Programs?      @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
 
@@ -238,24 +239,43 @@ model Student {
 
 enum StudentIdentityProvider {
   GOOGLE
+  TELEGRAM
 }
 
-// How a student signs in. A Telegram-only student gains one when they link (Stage 5).
+// How a student signs in or is reached. subject: Google `sub`, or the Telegram user id
+// (which is also the private chat id the bot sends to).
 model StudentIdentity {
   id            String                  @id @default(uuid()) @db.Uuid
   student_id    String                  @db.Uuid
   provider      StudentIdentityProvider
-  subject       String                  @db.VarChar(255) // Google `sub`, stable per Google account
-  email         String                  @db.VarChar(255) // lowercased
+  subject       String                  @db.VarChar(255)
+  email         String?                 @db.VarChar(255) // lowercased; Telegram has none
   created_at    DateTime                @default(now()) @db.Timestamptz(6)
   last_login_at DateTime?               @db.Timestamptz(6)
 
   student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
 
   @@unique([provider, subject])
-  @@unique([student_id, provider]) // one Google account per student
+  @@unique([student_id, provider]) // one account of each kind per student
   @@index([email])
   @@map("student_identities")
+}
+
+// One-time, 15-minute tokens that link a Telegram account and a Google account to the
+// same student. Only the SHA-256 hash is stored.
+model StudentLinkToken {
+  id          String                  @id @default(uuid()) @db.Uuid
+  student_id  String                  @db.Uuid
+  token_hash  String                  @unique @db.VarChar(64)
+  redeem_with StudentIdentityProvider // the account type that can redeem it
+  expires_at  DateTime                @db.Timestamptz(6)
+  consumed_at DateTime?               @db.Timestamptz(6)
+  created_at  DateTime                @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("student_link_tokens")
 }
 
 // Mirrors Auth_Sessions, but for students; kept separate so the two can never mix.

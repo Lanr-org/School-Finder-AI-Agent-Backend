@@ -20,6 +20,7 @@ import { registerHealthDocs } from '../modules/health/health.docs'
 import { registerDashboardDocs } from '../modules/dashboard/dashboard.docs'
 import { registerStudentAuthDocs } from '../modules/studentAuth/studentAuth.docs'
 import { registerStudentPortalDocs } from '../modules/studentPortal/studentPortal.docs'
+import { registerStudentLinkDocs } from '../modules/studentLink/studentLink.docs'
 
 // Every feature documents its own routes in src/modules/<feature>/<feature>.docs.ts.
 // Order is fixed here; features that share a registered component receive it
@@ -48,6 +49,7 @@ registerAuditDocs(registry)
 registerDashboardDocs(registry)
 registerStudentAuthDocs(registry)
 registerStudentPortalDocs(registry)
+registerStudentLinkDocs(registry)
 registerHealthDocs(registry)
 registerTelegramDocs(registry)
 

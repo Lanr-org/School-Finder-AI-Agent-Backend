@@ -10,26 +10,17 @@ describe('ContactsService & StudentsService Unit Tests', () => {
   })
 
   describe('ContactsService.resolveTelegramContact', () => {
-    it('should return existing student context if contact already exists in database', async () => {
-      const mockExistingContact = {
-        id: 'contact-uuid-1',
-        provider_type: 'TELEGRAM',
-        provider_user_id: '987654321',
-        first_name: 'Chinedu',
-        student: {
-          id: 'student-uuid-1',
-          public_id: 'STU-1048',
-          conversations: [
-            {
-              id: 'conv-uuid-1',
-              status: 'ACTIVE',
-              mode: 'AI_BOT',
-            },
-          ],
-        },
-      }
+    const mockExistingStudent = (conversations: { id: string }[]) => ({
+      id: 'student-uuid-1',
+      public_id: 'STU-1048',
+      contact_id: 'contact-uuid-1',
+      conversations,
+    })
 
-      vi.spyOn(ContactsRepo, 'findContactWithActiveStudent').mockResolvedValue(mockExistingContact as any)
+    it('finds the student through their Telegram identity, with the current conversation', async () => {
+      vi.spyOn(ContactsRepo, 'findStudentByTelegramId').mockResolvedValue(
+        mockExistingStudent([{ id: 'conv-uuid-1' }]) as any,
+      )
 
       const result = await ContactsService.resolveTelegramContact({
         providerType: 'TELEGRAM',
@@ -37,7 +28,7 @@ describe('ContactsService & StudentsService Unit Tests', () => {
         firstName: 'Chinedu',
       })
 
-      expect(ContactsRepo.findContactWithActiveStudent).toHaveBeenCalledWith('TELEGRAM', '987654321')
+      expect(ContactsRepo.findStudentByTelegramId).toHaveBeenCalledWith('987654321')
       expect(result).toEqual({
         contactId: 'contact-uuid-1',
         studentId: 'student-uuid-1',
@@ -47,8 +38,22 @@ describe('ContactsService & StudentsService Unit Tests', () => {
       })
     })
 
-    it('should register a new student when contact does not exist', async () => {
-      vi.spyOn(ContactsRepo, 'findContactWithActiveStudent').mockResolvedValue(null)
+    it('starts a new conversation when the last one was resolved', async () => {
+      vi.spyOn(ContactsRepo, 'findStudentByTelegramId').mockResolvedValue(mockExistingStudent([]) as any)
+      vi.spyOn(ContactsRepo, 'createStudentConversation').mockResolvedValue({ id: 'conv-uuid-2' } as any)
+
+      const result = await ContactsService.resolveTelegramContact({
+        providerType: 'TELEGRAM',
+        providerUserId: '987654321',
+        firstName: 'Chinedu',
+      })
+
+      expect(ContactsRepo.createStudentConversation).toHaveBeenCalledWith('student-uuid-1')
+      expect(result.conversationId).toBe('conv-uuid-2')
+    })
+
+    it('should register a new student when no student has this Telegram account', async () => {
+      vi.spyOn(ContactsRepo, 'findStudentByTelegramId').mockResolvedValue(null)
       vi.spyOn(ContactsRepo, 'registerStudentWithContact').mockResolvedValue({
         contactId: 'new-contact-uuid',
         studentId: 'new-student-uuid',

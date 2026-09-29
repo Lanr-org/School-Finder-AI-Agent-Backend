@@ -148,7 +148,21 @@ describe('GET /api/v1/student/me', () => {
       englishTest: 'IELTS 6.5',
       advisor: null,
       conversationMode: 'AI_BOT',
+      telegramLinked: false,
     })
+  })
+
+  it('reports a linked Telegram account and keeps the Google email', async () => {
+    portalRepo.findStudent.mockResolvedValue(
+      makeStudent({
+        identities: [
+          { provider: 'TELEGRAM', email: null },
+          { provider: 'GOOGLE', email: 'e@example.com' },
+        ],
+      }) as never,
+    )
+    const res = await auth(request(app).get('/api/v1/student/me'))
+    expect(res.body.data).toMatchObject({ telegramLinked: true, email: 'e@example.com' })
   })
 
   it('shows the advisor as handling when the conversation is with them', async () => {

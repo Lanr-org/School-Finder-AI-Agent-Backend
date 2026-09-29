@@ -122,7 +122,7 @@ export class TelegramCallbackQueryHandler {
 
         await TelegramOutboundService.sendMessage(
           chatId,
-          '🎉 Preference registration complete!\n\nYour profile has been updated in our system. You can now ask me any question about tuition fees, admission requirements, or specific universities!'
+          '🎉 Preference registration complete!\n\nYour profile has been updated in our system. You can now ask me any question about tuition fees, admission requirements, or specific universities!\n\nSend /plan to see your matches on the web.'
         )
         return true
 

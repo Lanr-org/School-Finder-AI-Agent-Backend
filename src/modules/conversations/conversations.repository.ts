@@ -4,6 +4,7 @@ import {
   ConversationMode,
   ConversationStatus,
   MessageSenderType,
+  StudentIdentityProvider,
   type MessageChannel,
   type Prisma,
 } from '../../generated/prisma/index.js'
@@ -100,6 +101,24 @@ export class ConversationsRepo {
       },
       orderBy: { created_at: 'desc' },
     })
+  }
+
+  // A linked Telegram account's user id, which is also its private chat id; null if none.
+  static findTelegramChatId = async (studentId: string) => {
+    const identity = await prisma.studentIdentity.findUnique({
+      where: { student_id_provider: { student_id: studentId, provider: StudentIdentityProvider.TELEGRAM } },
+      select: { subject: true },
+    })
+    return identity?.subject ?? null
+  }
+
+  static findLastSenderType = async (conversationId: string) => {
+    const message = await prisma.conversationMessages.findFirst({
+      where: { conversation_id: conversationId },
+      orderBy: { created_at: 'desc' },
+      select: { sender_type: true },
+    })
+    return message?.sender_type ?? null
   }
 
   static findLastStudentChannel = async (conversationId: string) => {

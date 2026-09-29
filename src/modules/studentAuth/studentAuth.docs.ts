@@ -30,7 +30,7 @@ export const registerStudentAuthDocs = (registry: OpenAPIRegistry) => {
     path: '/api/v1/student/auth/google',
     tags: ['Student auth'],
     summary: 'Sign in a student with Google',
-    description: `${STUDENT_AUTH_NOTE} Verifies the Google ID token (from Google's sign-in button) against our client ID and requires a verified email. A first-time Google account creates the student (a LIVE_CHAT contact, a NEW student with its status history, a first conversation and the Google identity) in one transaction. Rate limited to 20 requests per 15 minutes per IP.`,
+    description: `${STUDENT_AUTH_NOTE} Verifies the Google ID token (from Google's sign-in button) against our client ID and requires a verified email. A first-time Google account creates the student (a LIVE_CHAT contact, a NEW student with its status history, a first conversation and the Google identity) in one transaction. With a linkToken (from the bot's /plan link), the Google account is first attached to that Telegram student, or the two students are merged if the Google account already has one; sign-in then continues as the linked or surviving student, and linkOutcome says what happened. An invalid token or a refused merge never blocks sign-in. Rate limited to 20 requests per 15 minutes per IP.`,
     request: {
       body: { required: true, content: { 'application/json': { schema: googleSignInSchema } } },
     },
@@ -45,6 +45,10 @@ export const registerStudentAuthDocs = (registry: OpenAPIRegistry) => {
                 accessToken: z.string(),
                 student: studentSummarySchema,
                 isNewStudent: z.boolean(),
+                linkOutcome: z
+                  .enum(['LINKED', 'ALREADY_LINKED', 'MERGED', 'REFUSED', 'INVALID_TOKEN'])
+                  .optional()
+                  .openapi({ description: 'Only when a linkToken was sent.' }),
               }),
             ),
           },

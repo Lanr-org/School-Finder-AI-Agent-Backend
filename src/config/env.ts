@@ -24,6 +24,8 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().optional(),
+  // Without the leading @; used for t.me links that connect a web account to Telegram.
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
 
   // Gemini (LLM) Integration
   GEMINI_API_KEY: z.string().optional(),
@@ -74,6 +76,7 @@ export const env = {
   telegramBotToken: parsed.data.TELEGRAM_BOT_TOKEN,
   telegramWebhookSecret: parsed.data.TELEGRAM_WEBHOOK_SECRET,
   telegramWebhookUrl: parsed.data.TELEGRAM_WEBHOOK_URL,
+  telegramBotUsername: parsed.data.TELEGRAM_BOT_USERNAME,
 
   geminiApiKey: parsed.data.GEMINI_API_KEY,
   geminiModel: parsed.data.GEMINI_MODEL,

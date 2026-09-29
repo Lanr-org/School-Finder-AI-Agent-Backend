@@ -1,5 +1,5 @@
 export type ClientInfo = { ipAddress: string | null; userAgent: string | null }
-export type GoogleSignInInput = ClientInfo & { credential: string }
+export type GoogleSignInInput = ClientInfo & { credential: string; linkToken?: string | undefined }
 export type StudentRefreshInput = ClientInfo & { refreshToken: string }
 
 export type StudentSummary = {

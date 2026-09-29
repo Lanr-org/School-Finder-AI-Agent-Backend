@@ -4,7 +4,8 @@ import { logger } from '../../config/logger.js'
 import { TelegramWebhookUpdate } from '../../integrations/telegram/schemas/telegram-webhook.schema.js'
 import { TelegramUserMapper } from '../../integrations/telegram/mappers/telegram-user.mapper.js'
 import { TelegramMessageMapper } from '../../integrations/telegram/mappers/telegram-message.mapper.js'
-import { TelegramCommandHandler } from '../../integrations/telegram/handlers/command.handler.js'
+import { LINK_REPLIES, TelegramCommandHandler } from '../../integrations/telegram/handlers/command.handler.js'
+import StudentLinkService from '../../modules/studentLink/studentLink.service.js'
 import { TelegramCallbackQueryHandler } from '../../integrations/telegram/handlers/callback-query.handler.js'
 import { ContactsService } from '../../modules/contacts/contacts.service.js'
 import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
@@ -48,14 +49,25 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       return
     }
 
+    // 0. Account linking ("/start link_<token>" from the web app) comes before resolving the
+    // student, so a new Telegram user who links never gets a throwaway student of their own.
+    const linkToken = TelegramCommandHandler.parseLinkToken(messageDTO.textContent)
+    if (linkToken) {
+      const { outcome } = await StudentLinkService.LinkTelegram(linkToken, contactDTO.providerUserId)
+      logger.info({ updateId: update.update_id, outcome }, 'Handled Telegram account link.')
+      await TelegramOutboundService.sendMessage(messageDTO.externalChatId, LINK_REPLIES[outcome])
+      return
+    }
+
     // 1. Resolve or Register Student in PostgreSQL Database
     const studentContext = await ContactsService.resolveTelegramContact(contactDTO)
 
-    // 2. Handle Bot Commands (e.g. /start, /help)
+    // 2. Handle Bot Commands (e.g. /start, /help, /plan)
     if (messageDTO.textContent && messageDTO.textContent.startsWith('/')) {
       const handled = await TelegramCommandHandler.handleCommand(
         messageDTO.externalChatId,
-        messageDTO.textContent
+        messageDTO.textContent,
+        studentContext.studentId
       )
       if (handled) return
     }

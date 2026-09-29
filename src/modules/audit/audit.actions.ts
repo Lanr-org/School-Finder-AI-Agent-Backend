@@ -15,6 +15,8 @@ export const AUDIT_ACTIONS = {
   ADVISOR_ASSIGNED: 'student.advisor_assigned',
   ADVISOR_UNASSIGNED: 'student.advisor_unassigned',
   STUDENT_STATUS_CHANGED: 'student.status_changed',
+  STUDENT_IDENTITY_LINKED: 'student.identity_linked',
+  STUDENT_MERGED: 'student.merged',
   APPLICATION_CREATED: 'application.created',
   APPLICATION_STATUS_CHANGED: 'application.status_changed',
   SCHOOL_CREATED: 'school.created',

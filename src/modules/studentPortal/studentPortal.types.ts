@@ -61,6 +61,8 @@ export type StudentMe = {
   // handling = the conversation has been handed to this advisor.
   advisor: { name: string; handling: boolean } | null
   conversationMode: 'AI_BOT' | 'HUMAN_ADVISOR'
+  // A Telegram account is linked, so the bot can reach them (and advisor replies can nudge there).
+  telegramLinked: boolean
 }
 
 export type Money = { amount: number; currency: string }

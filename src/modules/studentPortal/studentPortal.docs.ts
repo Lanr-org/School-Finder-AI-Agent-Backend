@@ -36,6 +36,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         })
         .nullable(),
       conversationMode: z.enum(['AI_BOT', 'HUMAN_ADVISOR']),
+      telegramLinked: z.boolean().openapi({ description: 'true once a Telegram account is linked to this student' }),
     }),
   )
 
