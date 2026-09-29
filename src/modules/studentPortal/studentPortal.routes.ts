@@ -5,6 +5,7 @@ import { validate, validateParams } from '../../middleware/validate'
 import StudentPortalController from './studentPortal.controller'
 import {
   chooseProgrammeSchema,
+  journeyCheckParamsSchema,
   programIdParamsSchema,
   sendMessageSchema,
   updateProfileSchema,
@@ -41,11 +42,26 @@ studentPortalRouter.post(
   validate(chooseProgrammeSchema),
   StudentPortalController.Choose,
 )
-studentPortalRouter.get('/study-plan', StudentAuthenticateMiddleware, StudentPortalController.GetStudyPlan)
-studentPortalRouter.post(
-  '/study-plan/shared',
+// PUT ticks a step, DELETE unticks it. Students can only change their own steps (not proof of funds).
+studentPortalRouter.put(
+  '/journey/checks/:key',
   StudentAuthenticateMiddleware,
-  StudentPortalController.MarkStudyPlanShared,
+  validateParams(journeyCheckParamsSchema),
+  StudentPortalController.SetJourneyCheck,
+)
+studentPortalRouter.delete(
+  '/journey/checks/:key',
+  StudentAuthenticateMiddleware,
+  validateParams(journeyCheckParamsSchema),
+  StudentPortalController.SetJourneyCheck,
+)
+studentPortalRouter.get('/study-plan', StudentAuthenticateMiddleware, StudentPortalController.GetStudyPlan)
+// A new public link each time (only hashes are stored); DELETE stops every link working.
+studentPortalRouter.post('/study-plan/link', StudentAuthenticateMiddleware, StudentPortalController.CreateStudyPlanLink)
+studentPortalRouter.delete(
+  '/study-plan/link',
+  StudentAuthenticateMiddleware,
+  StudentPortalController.RevokeStudyPlanLinks,
 )
 
 // Keyed by student, not IP: each message can cost an AI call. The real cost cap is Stage 7.

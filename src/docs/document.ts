@@ -19,7 +19,11 @@ import { registerAuditDocs } from '../modules/audit/audit.docs'
 import { registerHealthDocs } from '../modules/health/health.docs'
 import { registerDashboardDocs } from '../modules/dashboard/dashboard.docs'
 import { registerStudentAuthDocs } from '../modules/studentAuth/studentAuth.docs'
-import { registerStudentPortalDocs } from '../modules/studentPortal/studentPortal.docs'
+import {
+  registerStaffJourneyDocs,
+  registerStudentPortalDocs,
+} from '../modules/studentPortal/studentPortal.docs'
+import { registerStudyPlanLinkDocs } from '../modules/studyPlanLinks/studyPlanLinks.docs'
 import { registerStudentLinkDocs } from '../modules/studentLink/studentLink.docs'
 
 // Every feature documents its own routes in src/modules/<feature>/<feature>.docs.ts.
@@ -48,8 +52,14 @@ registerVisaRatesDocs(registry)
 registerAuditDocs(registry)
 registerDashboardDocs(registry)
 registerStudentAuthDocs(registry)
-registerStudentPortalDocs(registry)
+const { journeySchema, programmeMatchSchema, money } =
+  registerStudentPortalDocs(registry)
+registerStaffJourneyDocs(registry, {
+  registeredStudentIdParamsSchema,
+  journeySchema,
+})
 registerStudentLinkDocs(registry)
+registerStudyPlanLinkDocs(registry, { programmeMatchSchema, money })
 registerHealthDocs(registry)
 registerTelegramDocs(registry)
 

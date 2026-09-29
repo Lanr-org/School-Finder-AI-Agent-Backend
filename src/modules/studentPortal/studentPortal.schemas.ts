@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { IntakeMonth } from '../../generated/prisma/index.js'
+import { IntakeMonth, JourneyCheckKey } from '../../generated/prisma/index.js'
 
 // Same codes the Telegram bot writes, so matching treats both channels the same.
 export const STUDY_LEVEL_CODES = ['MASTERS', 'BACHELORS', 'PHD', 'DIPLOMA'] as const
@@ -45,6 +45,10 @@ export const programIdParamsSchema = z.object({
 
 export const chooseProgrammeSchema = z.object({
   programId: z.string().trim().min(1).max(24),
+})
+
+export const journeyCheckParamsSchema = z.object({
+  key: z.enum(JourneyCheckKey),
 })
 
 export const sendMessageSchema = z.object({

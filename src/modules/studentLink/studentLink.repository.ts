@@ -71,6 +71,18 @@ const StudentLinkRepo = {
     })
     await tx.studentShortlist.updateMany({ where: { student_id: absorbed.id }, data: { student_id: survivor.id } })
 
+    // Journey ticks: same as the shortlist, the survivor's own tick wins on a clash.
+    const keptChecks = await tx.studentJourneyCheck.findMany({
+      where: { student_id: survivor.id },
+      select: { key: true },
+    })
+    await tx.studentJourneyCheck.deleteMany({
+      where: { student_id: absorbed.id, key: { in: keptChecks.map((c) => c.key) } },
+    })
+    await tx.studentJourneyCheck.updateMany({ where: { student_id: absorbed.id }, data: { student_id: survivor.id } })
+    // Links already sent to parents keep working, now showing the survivor's plan.
+    await tx.studyPlanLink.updateMany({ where: { student_id: absorbed.id }, data: { student_id: survivor.id } })
+
     await tx.studentIdentity.updateMany({ where: { student_id: absorbed.id }, data: { student_id: survivor.id } })
     // Moved, not revoked: a signed-in web tab picks up the survivor on its next refresh.
     await tx.studentSession.updateMany({ where: { student_id: absorbed.id }, data: { student_id: survivor.id } })

@@ -3,6 +3,9 @@ import { z } from 'zod'
 
 dotenv.config()
 
+export const LLM_PROVIDERS = ['anthropic', 'openai', 'gemini'] as const
+export type LlmProvider = (typeof LLM_PROVIDERS)[number]
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -26,6 +29,23 @@ const envSchema = z.object({
   TELEGRAM_WEBHOOK_URL: z.string().optional(),
   // Without the leading @; used for t.me links that connect a web account to Telegram.
   TELEGRAM_BOT_USERNAME: z.string().optional(),
+
+  // LLM: the provider that answers first, then the fallbacks tried in order when it fails
+  // (overloaded, rate limited, down), e.g. "openai,gemini" or "none". Each needs its own key below.
+  LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('gemini'),
+  LLM_FALLBACK_PROVIDERS: z
+    .string()
+    .default('none')
+    .transform((value) => value.split(',').map((p) => p.trim().toLowerCase()).filter((p) => p && p !== 'none'))
+    .pipe(z.array(z.enum(LLM_PROVIDERS))),
+
+  // Anthropic (Claude)
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-5-5'),
+
+  // OpenAI
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-5-mini'),
 
   // Gemini (LLM) Integration
   GEMINI_API_KEY: z.string().optional(),
@@ -77,6 +97,13 @@ export const env = {
   telegramWebhookSecret: parsed.data.TELEGRAM_WEBHOOK_SECRET,
   telegramWebhookUrl: parsed.data.TELEGRAM_WEBHOOK_URL,
   telegramBotUsername: parsed.data.TELEGRAM_BOT_USERNAME,
+
+  llmProvider: parsed.data.LLM_PROVIDER,
+  llmFallbackProviders: parsed.data.LLM_FALLBACK_PROVIDERS,
+  anthropicApiKey: parsed.data.ANTHROPIC_API_KEY,
+  anthropicModel: parsed.data.ANTHROPIC_MODEL,
+  openaiApiKey: parsed.data.OPENAI_API_KEY,
+  openaiModel: parsed.data.OPENAI_MODEL,
 
   geminiApiKey: parsed.data.GEMINI_API_KEY,
   geminiModel: parsed.data.GEMINI_MODEL,

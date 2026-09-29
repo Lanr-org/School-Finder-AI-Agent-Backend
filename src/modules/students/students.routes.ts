@@ -163,6 +163,28 @@ studentsRouter.post(
   RecommendationsController.GenerateRun,
 )
 
+// The student's journey; staff tick the steps the system can't detect (deposit, English, funds).
+studentsRouter.get(
+  '/:studentId/journey',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  StudentsController.GetJourney,
+)
+
+studentsRouter.put(
+  '/:studentId/journey/checks/:key',
+  canAccessStudents,
+  validateParams(StudentsSchemas.journeyCheckParamsSchema),
+  StudentsController.SetJourneyCheck,
+)
+
+studentsRouter.delete(
+  '/:studentId/journey/checks/:key',
+  canAccessStudents,
+  validateParams(StudentsSchemas.journeyCheckParamsSchema),
+  StudentsController.SetJourneyCheck,
+)
+
 studentsRouter.get(
   '/:studentId/recommendations',
   canAccessStudents,

@@ -1,63 +1,87 @@
-import type { ApplicationStatus } from '../../generated/prisma/index.js'
+import type { ApplicationStatus, JourneyCheckKey } from '../../generated/prisma/index.js'
+import { hasEnglishEvidence } from '../recommendations/recommendations.scoring.js'
 import type { Journey, JourneyInput, JourneyStageKey, NextStep, StageOwner } from './studentPortal.types'
 
 // Pure: derives the student's journey from their data. No database access here.
 
 const STAGE_ORDER: JourneyStageKey[] = ['PROFILE', 'EXPLORE', 'CHOOSE', 'APPLY', 'OFFER', 'ENGLISH', 'FUNDS', 'VISA']
 
+// checkKey marks an item ticked by hand (student_journey_checks); the rest come from data.
+type ChecklistDef = { label: string; checkKey?: JourneyCheckKey }
+
 const STAGE_DEFS: Record<
   JourneyStageKey,
-  { title: string; description: string; owner: StageOwner; checklist: string[] }
+  { title: string; description: string; owner: StageOwner; checklist: ChecklistDef[] }
 > = {
   PROFILE: {
     title: 'Your profile',
     description: 'Tell us what you want to study, where and when.',
     owner: 'SMETASE',
-    checklist: ['Study level', 'Destination', 'Start date', 'Budget', 'Academic background', 'English test'],
+    checklist: [
+      { label: 'Study level' },
+      { label: 'Destination' },
+      { label: 'Start date' },
+      { label: 'Budget' },
+      { label: 'Academic background' },
+      { label: 'English test' },
+    ],
   },
   EXPLORE: {
     title: 'Explore',
     description: 'See programmes that fit you, and why.',
     owner: 'SMETASE',
-    checklist: ['Review your matches', 'Shortlist at least one programme'],
+    checklist: [{ label: 'Review your matches' }, { label: 'Shortlist at least one programme' }],
   },
   CHOOSE: {
     title: 'Shortlist & choose',
     description: 'Pick one programme and share your plan with whoever is helping you.',
     owner: 'YOU',
-    checklist: ['Choose a programme', 'Share your study plan'],
+    checklist: [{ label: 'Choose a programme' }, { label: 'Share your study plan' }],
   },
   APPLY: {
     title: 'Apply',
     description: 'Your advisor helps you prepare and submit.',
     owner: 'ADVISOR',
-    checklist: ['Documents ready', 'Application submitted'],
+    checklist: [{ label: 'Documents ready' }, { label: 'Application submitted' }],
   },
   OFFER: {
     title: 'Offer & tuition',
     description: 'Accept your offer and pay the deposit.',
     owner: 'YOU',
-    checklist: ['Offer received', 'Tuition deposit paid'],
+    checklist: [{ label: 'Offer received' }, { label: 'Tuition deposit paid', checkKey: 'DEPOSIT_PAID' }],
   },
   ENGLISH: {
     title: 'English test',
     description: 'IELTS booked and score in (or WAEC accepted).',
     owner: 'YOU',
-    checklist: ['Test booked', 'Score received'],
+    checklist: [
+      { label: 'Test booked', checkKey: 'ENGLISH_TEST_BOOKED' },
+      { label: 'Score received', checkKey: 'ENGLISH_SCORE_RECEIVED' },
+    ],
   },
   FUNDS: {
     title: 'Proof of funds',
     description: 'Show the funds your visa needs.',
     owner: 'ADVISOR',
-    checklist: ['Funds plan agreed', 'Documents ready'],
+    checklist: [
+      { label: 'Funds plan agreed', checkKey: 'FUNDS_PLAN_AGREED' },
+      { label: 'Documents ready', checkKey: 'FUNDS_DOCUMENTS_READY' },
+    ],
   },
   VISA: {
     title: 'Visa',
     description: 'Apply for your student visa.',
     owner: 'ADVISOR',
-    checklist: ['Application submitted', 'Biometrics done', 'Decision received'],
+    checklist: [{ label: 'Application submitted' }, { label: 'Biometrics done' }, { label: 'Decision received' }],
   },
 }
+
+// Checks a student may tick themselves; the rest (proof of funds) are the advisor's call.
+export const STUDENT_TICKABLE_CHECKS: ReadonlySet<JourneyCheckKey> = new Set<JourneyCheckKey>([
+  'DEPOSIT_PAID',
+  'ENGLISH_TEST_BOOKED',
+  'ENGLISH_SCORE_RECEIVED',
+])
 
 // REJECTED/WITHDRAWN are left out: a closed application shouldn't hold the journey.
 const APPLICATION_PROGRESS: ApplicationStatus[] = [
@@ -87,21 +111,44 @@ const profileChecks = (profile: JourneyInput['profile']) => [
   Boolean(profile.englishTest),
 ]
 
+// Done because the data says so, whether or not anyone ticked it. Such items can't be unticked.
+const doneFromData = (key: JourneyCheckKey, input: JourneyInput): boolean => {
+  const hasScore = hasEnglishEvidence(input.profile.englishTest)
+  switch (key) {
+    case 'DEPOSIT_PAID':
+      return reached(input.applicationStatus, 'VISA_PROCESSING')
+    case 'ENGLISH_TEST_BOOKED':
+    case 'ENGLISH_SCORE_RECEIVED':
+      return hasScore
+    case 'FUNDS_PLAN_AGREED':
+      return input.checks.has('FUNDS_DOCUMENTS_READY')
+    case 'FUNDS_DOCUMENTS_READY':
+      return false
+  }
+}
+
+const isDone = (key: JourneyCheckKey, input: JourneyInput) => input.checks.has(key) || doneFromData(key, input)
+
 // Applications are checked first: a lead an advisor is already applying for shouldn't
 // be stuck on "finish your profile" because its budget was never recorded.
-// ENGLISH and FUNDS can't be detected from data yet (Stage 6 adds a checklist table),
-// so a student goes OFFER → VISA for now.
+// After an offer: deposit, then English, then proof of funds, then the visa.
 export const currentStageFor = (input: JourneyInput): JourneyStageKey => {
   const app = input.applicationStatus
   if (reached(app, 'VISA_PROCESSING')) return 'VISA'
-  if (reached(app, 'OFFER_RECEIVED')) return 'OFFER'
+  if (reached(app, 'OFFER_RECEIVED')) {
+    if (!isDone('DEPOSIT_PAID', input)) return 'OFFER'
+    if (!isDone('ENGLISH_SCORE_RECEIVED', input)) return 'ENGLISH'
+    if (!isDone('FUNDS_DOCUMENTS_READY', input)) return 'FUNDS'
+    return 'VISA'
+  }
   if (reached(app, 'DRAFT')) return 'APPLY'
   if (!profileChecks(input.profile).every(Boolean)) return 'PROFILE'
   if (input.shortlistCount === 0 && !input.hasChoice) return 'EXPLORE'
   return 'CHOOSE'
 }
 
-const checklistValues = (key: JourneyStageKey, input: JourneyInput): boolean[] => {
+// Values for the items without a checkKey (the ticked ones are read from input.checks).
+const derivedValues = (key: JourneyStageKey, input: JourneyInput): boolean[] => {
   const app = input.applicationStatus
   const shortlisted = input.shortlistCount > 0 || input.hasChoice
   switch (key) {
@@ -114,7 +161,7 @@ const checklistValues = (key: JourneyStageKey, input: JourneyInput): boolean[] =
     case 'APPLY':
       return [reached(app, 'SUBMITTED'), reached(app, 'SUBMITTED')]
     case 'OFFER':
-      return [reached(app, 'OFFER_RECEIVED'), reached(app, 'VISA_PROCESSING')]
+      return [reached(app, 'OFFER_RECEIVED'), false]
     case 'ENGLISH':
     case 'FUNDS':
       return [false, false]
@@ -172,15 +219,21 @@ const nextStepFor = (stage: JourneyStageKey, input: JourneyInput): NextStep => {
     case 'OFFER':
       return {
         title: 'Accept your offer',
-        description: 'Accept it and plan the tuition deposit with whoever is supporting you.',
+        description: "Accept it and plan the tuition deposit with whoever is supporting you. Tick it off once it's paid.",
         action: { label: 'Open study plan', target: 'STUDY_PLAN' },
       }
     case 'ENGLISH':
-      return {
-        title: 'Book your English test',
-        description: 'Book a date that leaves time for your results.',
-        action: { label: 'Ask about IELTS', target: 'CHAT' },
-      }
+      return isDone('ENGLISH_TEST_BOOKED', input)
+        ? {
+            title: 'Waiting for your English score',
+            description: 'Tick it off here once your result is in, and tell us your score in the chat.',
+            action: { label: 'Go to chat', target: 'CHAT' },
+          }
+        : {
+            title: 'Book your English test',
+            description: 'Book a date that leaves time for your results.',
+            action: { label: 'Ask about IELTS', target: 'CHAT' },
+          }
     case 'FUNDS':
       return {
         title: 'Sort your proof of funds',
@@ -198,7 +251,8 @@ const nextStepFor = (stage: JourneyStageKey, input: JourneyInput): NextStep => {
   }
 }
 
-export const deriveJourney = (input: JourneyInput): Journey => {
+// viewer decides canTick: students tick their own steps; staff can tick any ticked-by-hand step.
+export const deriveJourney = (input: JourneyInput, viewer: 'STUDENT' | 'STAFF' = 'STUDENT'): Journey => {
   const currentStage = currentStageFor(input)
   const current = STAGE_ORDER.indexOf(currentStage)
 
@@ -206,7 +260,7 @@ export const deriveJourney = (input: JourneyInput): Journey => {
     currentStage,
     stages: STAGE_ORDER.map((key, index) => {
       const status = index < current ? 'DONE' : index === current ? 'CURRENT' : 'UPCOMING'
-      const values = checklistValues(key, input)
+      const values = derivedValues(key, input)
       const def = STAGE_DEFS[key]
       return {
         key,
@@ -214,12 +268,23 @@ export const deriveJourney = (input: JourneyInput): Journey => {
         description: def.description,
         owner: def.owner,
         status,
-        // Everything in a stage the student has moved past counts as done.
-        checklist: def.checklist.map((label, i) => ({
-          id: `${key}-${i}`,
-          label,
-          done: status === 'DONE' || (values[i] ?? false),
-        })),
+        checklist: def.checklist.map((item, i) => {
+          const checkKey = item.checkKey ?? null
+          const ticked = checkKey ? input.checks.has(checkKey) : false
+          const fromData = checkKey ? doneFromData(checkKey, input) : (values[i] ?? false)
+          // Everything in a stage the student has moved past counts as done.
+          const done = status === 'DONE' || ticked || fromData
+          // Locked when the data (or a later stage) already makes it done: unticking would change nothing.
+          const locked = fromData || (status === 'DONE' && !ticked)
+          const viewerMay = viewer === 'STAFF' || (checkKey !== null && STUDENT_TICKABLE_CHECKS.has(checkKey))
+          return {
+            id: `${key}-${i}`,
+            label: item.label,
+            done,
+            checkKey,
+            canTick: checkKey !== null && viewerMay && !locked,
+          }
+        }),
       }
     }),
     nextStep: nextStepFor(currentStage, input),

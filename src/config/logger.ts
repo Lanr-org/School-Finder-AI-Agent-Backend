@@ -15,18 +15,29 @@ const loggerOptions: pino.LoggerOptions = {
       'req.body.newPassword',
       'req.body.confirmNewPassword',
       'req.body.refreshToken',
+      'req.params.token',
       'res.headers["set-cookie"]',
     ],
     censor: '[REDACTED]',
   },
 }
 
-const sanitizeLoggedUrl = (url: string | undefined) => {
-  return url?.replace(
-    /\/api\/v1\/auth\/reset-password\/[^/?#]+/g,
-    '/api/v1/auth/reset-password/[REDACTED]',
+// Routes whose path carries a secret token: a logged URL must never be usable.
+const TOKEN_PATHS = [
+  '/api/v1/auth/reset-password/',
+  '/api/v1/auth/invitations/',
+  '/api/v1/public/study-plans/',
+]
+
+export const sanitizeLoggedUrl = (url: string | undefined) =>
+  TOKEN_PATHS.reduce(
+    (safe, prefix) =>
+      safe?.replace(
+        new RegExp(`${prefix.replace(/\//g, '\\/')}[^/?#]+`, 'g'),
+        `${prefix}[REDACTED]`,
+      ),
+    url,
   )
-}
 
 if (env.nodeEnv === 'development') {
   loggerOptions.transport = {

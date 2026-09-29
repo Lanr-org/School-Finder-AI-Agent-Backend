@@ -1,8 +1,12 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
+import type { RouteConfig } from '@asteasolutions/zod-to-openapi'
 import { emptySuccessResponseSchema, errorContent, successEnvelope } from '../../docs/registry'
+import { JourneyCheckKey } from '../../generated/prisma/index.js'
+import { StudentsSchemas } from '../students/students.schemas.js'
 import {
   chooseProgrammeSchema,
+  journeyCheckParamsSchema,
   programIdParamsSchema,
   sendMessageSchema,
   updateProfileSchema,
@@ -51,7 +55,21 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
           description: z.string(),
           status: z.enum(['DONE', 'CURRENT', 'UPCOMING']),
           owner: z.enum(['YOU', 'SMETASE', 'ADVISOR']),
-          checklist: z.array(z.object({ id: z.string(), label: z.string(), done: z.boolean() })),
+          checklist: z.array(
+            z.object({
+              id: z.string(),
+              label: z.string(),
+              done: z.boolean(),
+              checkKey: z
+                .enum(JourneyCheckKey)
+                .nullable()
+                .openapi({ description: 'Set for steps ticked by hand; null for steps derived from data.' }),
+              canTick: z.boolean().openapi({
+                description:
+                  'Whether this viewer may tick or untick it. Students: deposit and English only. False when the data already makes it done.',
+              }),
+            }),
+          ),
         }),
       ),
       nextStep: z.object({
@@ -139,7 +157,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     tags: ['Student portal'],
     security: [{ bearerAuth: [] }],
     summary: "Get the signed-in student's journey",
-    description: `${PORTAL_NOTE} Derived from data: the furthest open application first (DRAFT–SUBMITTED → APPLY, OFFER_RECEIVED → OFFER, VISA_PROCESSING/COMPLETED → VISA; rejected and withdrawn ignored), then profile completeness, then shortlist and choice. ENGLISH and FUNDS aren't detected yet.`,
+    description: `${PORTAL_NOTE} Derived from data: the furthest open application first (DRAFT–SUBMITTED → APPLY, OFFER_RECEIVED → OFFER, VISA_PROCESSING/COMPLETED → VISA; rejected and withdrawn ignored), then profile completeness, then shortlist and choice. After an offer, the hand-ticked steps decide the stage: deposit paid → ENGLISH, English score received (or an actual result in the profile) → FUNDS, funds documents ready → VISA.`,
     responses: {
       200: { description: 'Journey retrieved.', content: json(successEnvelope(journeySchema)) },
       401: unauthorized,
@@ -273,16 +291,105 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     },
   })
 
-  registry.registerPath({
-    method: 'post',
-    path: '/api/v1/student/study-plan/shared',
+  const journeyCheckPath = (method: 'put' | 'delete'): RouteConfig => ({
+    method,
+    path: '/api/v1/student/journey/checks/{key}',
     tags: ['Student portal'],
     security: [{ bearerAuth: [] }],
-    summary: 'Record that the study plan was shared',
-    description: `${PORTAL_NOTE} Sets the first-share time (later shares don't change it). Feeds the "study plans shared" measure.`,
+    summary: method === 'put' ? 'Tick a journey step' : 'Untick a journey step',
+    description: `${PORTAL_NOTE} For steps the system can't detect. Students may change DEPOSIT_PAID, ENGLISH_TEST_BOOKED and ENGLISH_SCORE_RECEIVED; the proof-of-funds steps are their advisor's. Idempotent. Audited as student.journey_check_set / student.journey_check_cleared.`,
+    request: { params: journeyCheckParamsSchema },
     responses: {
-      200: { description: 'Share recorded.', content: json(emptySuccessResponseSchema) },
+      200: { description: 'Updated; returns the journey.', content: json(successEnvelope(journeySchema)) },
+      400: errorContent('Unknown step key.'),
+      401: unauthorized,
+      403: errorContent('This step is updated by the advisor.'),
+    },
+  })
+  registry.registerPath(journeyCheckPath('put'))
+  registry.registerPath(journeyCheckPath('delete'))
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/student/study-plan/link',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Create a public link to the study plan',
+    description: `${PORTAL_NOTE} Returns a read-only link (student app /p/{token}) a parent or sponsor can open without signing in. Only a hash of the token is stored, so each call makes a new link; earlier links keep working for 90 days unless revoked. The linked page is live and always shows the current choice. Also records the first share (the "study plans shared" measure).`,
+    responses: {
+      201: {
+        description: 'Link created.',
+        content: json(successEnvelope(z.object({ url: z.string().url(), expiresAt: z.string() }))),
+      },
+      401: unauthorized,
+      409: errorContent('No programme chosen yet.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/v1/student/study-plan/link',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Stop sharing the study plan',
+    description: `${PORTAL_NOTE} Revokes every public link to the student's study plan. Idempotent.`,
+    responses: {
+      200: { description: 'Links revoked.', content: json(emptySuccessResponseSchema) },
       401: unauthorized,
     },
   })
+
+  return { journeySchema, programmeMatchSchema, money }
+}
+
+// Staff view of the same journey, registered here because it reuses StudentJourney.
+export const registerStaffJourneyDocs = (
+  registry: OpenAPIRegistry,
+  {
+    registeredStudentIdParamsSchema,
+    journeySchema,
+  }: {
+    registeredStudentIdParamsSchema: typeof StudentsSchemas.studentIdParamsSchema
+    journeySchema: z.ZodTypeAny
+  },
+) => {
+  const json = <T extends z.ZodTypeAny>(schema: T) => ({ 'application/json': { schema } })
+  const staffNote =
+    'ADMIN, or the ADVISOR assigned to the student. Staff may tick every hand-ticked step, including proof of funds.'
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/students/{studentId}/journey',
+    tags: ['Students'],
+    security: [{ bearerAuth: [] }],
+    summary: "Get a student's journey",
+    description: `${staffNote} Same shape the student sees; canTick is computed for staff.`,
+    request: { params: registeredStudentIdParamsSchema },
+    responses: {
+      200: { description: 'Journey retrieved.', content: json(successEnvelope(journeySchema)) },
+      400: errorContent('Invalid student ID.'),
+      401: errorContent('Not authenticated.'),
+      403: errorContent('Not ADMIN, and not the assigned advisor.'),
+      404: errorContent('Student not found.'),
+    },
+  })
+
+  const staffCheckPath = (method: 'put' | 'delete'): RouteConfig => ({
+    method,
+    path: '/api/v1/students/{studentId}/journey/checks/{key}',
+    tags: ['Students'],
+    security: [{ bearerAuth: [] }],
+    summary: method === 'put' ? "Tick a student's journey step" : "Untick a student's journey step",
+    description: `${staffNote} Idempotent. Records who ticked it, and audits student.journey_check_set / student.journey_check_cleared.`,
+    request: { params: StudentsSchemas.journeyCheckParamsSchema },
+    responses: {
+      200: { description: 'Updated; returns the journey.', content: json(successEnvelope(journeySchema)) },
+      400: errorContent('Invalid student ID or step key.'),
+      401: errorContent('Not authenticated.'),
+      403: errorContent('Not ADMIN, and not the assigned advisor.'),
+      404: errorContent('Student not found.'),
+    },
+  })
+  registry.registerPath(staffCheckPath('put'))
+  registry.registerPath(staffCheckPath('delete'))
 }

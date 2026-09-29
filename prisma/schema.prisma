@@ -58,6 +58,7 @@ model Users {
   application_status_changes    ApplicationStatusHistory[]
   student_status_changes        StudentStatusHistory[]
   audit_logs                    AuditLog[]
+  journey_checks                StudentJourneyCheck[]
 
   @@map("users")
 }
@@ -228,6 +229,8 @@ model Student {
   identities           StudentIdentity[]
   sessions             StudentSession[]
   link_tokens          StudentLinkToken[]
+  journey_checks       StudentJourneyCheck[]
+  study_plan_links     StudyPlanLink[]
   // SetNull: deleting a programme clears the choice instead of blocking the delete.
   chosen_program       Programs?      @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
 
@@ -276,6 +279,45 @@ model StudentLinkToken {
 
   @@index([student_id])
   @@map("student_link_tokens")
+}
+
+// Journey steps the system can't detect from data. A row means done; unticking deletes it.
+enum JourneyCheckKey {
+  DEPOSIT_PAID
+  ENGLISH_TEST_BOOKED
+  ENGLISH_SCORE_RECEIVED
+  FUNDS_PLAN_AGREED
+  FUNDS_DOCUMENTS_READY
+}
+
+model StudentJourneyCheck {
+  student_id   String          @db.Uuid
+  key          JourneyCheckKey
+  done_at      DateTime        @default(now()) @db.Timestamptz(6)
+  done_by_user String?         @db.Uuid // staff user who ticked it; null = the student
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  done_by Users?  @relation(fields: [done_by_user], references: [id], onDelete: SetNull)
+
+  @@id([student_id, key])
+  @@index([done_by_user])
+  @@map("student_journey_checks")
+}
+
+// Public, read-only links to a student's Study Plan (for parents and sponsors).
+// Only the SHA-256 hash is stored; each share creates a new link.
+model StudyPlanLink {
+  id         String    @id @default(uuid()) @db.Uuid
+  student_id String    @db.Uuid
+  token_hash String    @unique @db.VarChar(64)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  revoked_at DateTime? @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("study_plan_links")
 }
 
 // Mirrors Auth_Sessions, but for students; kept separate so the two can never mix.

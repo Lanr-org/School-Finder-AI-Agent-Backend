@@ -15,6 +15,9 @@ import { ConversationsRepo } from '../src/modules/conversations/conversations.re
 import { ContactsRepo } from '../src/modules/contacts/contacts.repository'
 import { StudentMessageService } from '../src/modules/conversations/studentMessage.service'
 import { CentrifugoClient } from '../src/integrations/centrifugo/services/centrifugo.client'
+import StudyPlanLinkRepo from '../src/modules/studyPlanLinks/studyPlanLinks.repository'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
+import { hashOpaqueToken } from '../src/common/security/opaqueToken'
 
 vi.mock('../src/modules/studentAuth/studentAuth.repository', () => ({
   default: { findSessionById: vi.fn() },
@@ -29,7 +32,13 @@ vi.mock('../src/modules/studentPortal/studentPortal.repository', () => ({
     choose: vi.fn(),
     removeFromShortlist: vi.fn(),
     markStudyPlanShared: vi.fn(),
+    findJourneyChecks: vi.fn(),
+    setJourneyCheck: vi.fn(),
+    clearJourneyCheck: vi.fn(),
   },
+}))
+vi.mock('../src/modules/studyPlanLinks/studyPlanLinks.repository', () => ({
+  default: { create: vi.fn(), findLiveStudentId: vi.fn(), revokeAll: vi.fn() },
 }))
 vi.mock('../src/modules/recommendations/recommendations.repository', () => ({
   RecommendationsRepo: {
@@ -122,6 +131,7 @@ beforeEach(() => {
   portalRepo.findStudent.mockResolvedValue(makeStudent() as never)
   portalRepo.countShortlist.mockResolvedValue(0)
   portalRepo.listApplicationStatuses.mockResolvedValue([])
+  portalRepo.findJourneyChecks.mockResolvedValue([])
   recRepo.getCurrentWeights.mockResolvedValue({
     version: 1,
     weights: { programWeight: 35, budgetWeight: 25, intakeWeight: 20, visaWeight: 20 },
@@ -327,10 +337,131 @@ describe('study plan', () => {
     expect(res.body.data.total).toEqual({ amount: 11000, currency: 'GBP' })
   })
 
-  it('records a share', async () => {
-    const res = await auth(request(app).post('/api/v1/student/study-plan/shared'))
-    expect(res.status).toBe(200)
+  it('creates a public link: stores only the hash and records the share', async () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ chosen_program_id: 'program-1' }) as never)
+    const expires = new Date('2026-12-28T00:00:00Z')
+    vi.mocked(StudyPlanLinkRepo).create.mockResolvedValue({ expires_at: expires } as never)
+
+    const res = await auth(request(app).post('/api/v1/student/study-plan/link'))
+
+    expect(res.status).toBe(201)
+    const url: string = res.body.data.url
+    expect(url).toMatch(/^http:\/\/localhost:5174\/p\/[A-Za-z0-9_-]{43}$/)
+    expect(res.body.data.expiresAt).toBe(expires.toISOString())
+    const token = url.split('/p/')[1]!
+    // The raw token never reaches the database, only its SHA-256.
+    expect(vi.mocked(StudyPlanLinkRepo).create).toHaveBeenCalledWith(STUDENT_ID, hashOpaqueToken(token))
     expect(portalRepo.markStudyPlanShared).toHaveBeenCalledWith(STUDENT_ID)
+  })
+
+  it('refuses a link before a programme is chosen', async () => {
+    const res = await auth(request(app).post('/api/v1/student/study-plan/link'))
+    expect(res.status).toBe(409)
+    expect(vi.mocked(StudyPlanLinkRepo).create).not.toHaveBeenCalled()
+  })
+
+  it('stops sharing by revoking every link', async () => {
+    const res = await auth(request(app).delete('/api/v1/student/study-plan/link'))
+    expect(res.status).toBe(200)
+    expect(vi.mocked(StudyPlanLinkRepo).revokeAll).toHaveBeenCalledWith(STUDENT_ID)
+  })
+})
+
+describe('GET /api/v1/public/study-plans/:token', () => {
+  const TOKEN = 'a'.repeat(43)
+
+  it('shows the live plan with the first name only, never cached or indexed', async () => {
+    vi.mocked(StudyPlanLinkRepo).findLiveStudentId.mockResolvedValue(STUDENT_ID)
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ chosen_program_id: 'program-1' }) as never)
+    portalRepo.findProgramById.mockResolvedValue(makeProgram(1) as never)
+
+    const res = await request(app).get(`/api/v1/public/study-plans/${TOKEN}`)
+
+    expect(res.status).toBe(200)
+    expect(vi.mocked(StudyPlanLinkRepo).findLiveStudentId).toHaveBeenCalledWith(hashOpaqueToken(TOKEN))
+    expect(res.body.data.studentFirstName).toBe('Emmanuel')
+    expect(res.body.data.programme.programmeId).toBe('PRG-1001')
+    const body = JSON.stringify(res.body)
+    expect(body).not.toContain('Oyelowo')
+    expect(body).not.toContain('e@example.com')
+    expect(body).not.toContain('STU-6377')
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.headers['x-robots-tag']).toContain('noindex')
+  })
+
+  it('gives the same 404 for an unknown, expired or revoked link and for a plan with no choice', async () => {
+    vi.mocked(StudyPlanLinkRepo).findLiveStudentId.mockResolvedValue(null)
+    const dead = await request(app).get(`/api/v1/public/study-plans/${TOKEN}`)
+
+    vi.mocked(StudyPlanLinkRepo).findLiveStudentId.mockResolvedValue(STUDENT_ID)
+    const noChoice = await request(app).get(`/api/v1/public/study-plans/${TOKEN}`)
+
+    expect(dead.status).toBe(404)
+    expect(noChoice.status).toBe(404)
+    expect(dead.body.error?.message ?? dead.body.message).toBe(noChoice.body.error?.message ?? noChoice.body.message)
+  })
+
+  it('rejects a malformed token without touching the database', async () => {
+    const res = await request(app).get('/api/v1/public/study-plans/not-a-token')
+    expect(res.status).toBe(400)
+    expect(vi.mocked(StudyPlanLinkRepo).findLiveStudentId).not.toHaveBeenCalled()
+  })
+})
+
+describe('journey checks', () => {
+  const offerStage = () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ english_test_score: 'Not taken yet' }) as never)
+    portalRepo.listApplicationStatuses.mockResolvedValue(['OFFER_RECEIVED'])
+  }
+
+  it('shows which steps the student can tick', async () => {
+    offerStage()
+    const res = await auth(request(app).get('/api/v1/student/journey'))
+    const funds = res.body.data.stages.find((s: { key: string }) => s.key === 'FUNDS')
+    const offer = res.body.data.stages.find((s: { key: string }) => s.key === 'OFFER')
+    expect(offer.checklist[1]).toMatchObject({ checkKey: 'DEPOSIT_PAID', canTick: true, done: false })
+    expect(funds.checklist.every((item: { canTick: boolean }) => !item.canTick)).toBe(true)
+  })
+
+  it('ticks a step, audits it with no staff actor, and returns the new journey', async () => {
+    offerStage()
+    portalRepo.findJourneyChecks.mockResolvedValue(['DEPOSIT_PAID'])
+
+    const res = await auth(request(app).put('/api/v1/student/journey/checks/DEPOSIT_PAID'))
+
+    expect(res.status).toBe(200)
+    expect(portalRepo.setJourneyCheck).toHaveBeenCalledWith(STUDENT_ID, 'DEPOSIT_PAID', null, expect.anything())
+    expect(res.body.data.currentStage).toBe('ENGLISH')
+    expect(vi.mocked(AuditRepo).record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'student.journey_check_set',
+        entity_id: 'STU-6377',
+        actor_id: null,
+      }),
+    )
+  })
+
+  it('unticks with DELETE', async () => {
+    offerStage()
+    const res = await auth(request(app).delete('/api/v1/student/journey/checks/ENGLISH_TEST_BOOKED'))
+    expect(res.status).toBe(200)
+    expect(portalRepo.clearJourneyCheck).toHaveBeenCalledWith(STUDENT_ID, 'ENGLISH_TEST_BOOKED', expect.anything())
+    expect(vi.mocked(AuditRepo).record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'student.journey_check_cleared' }),
+    )
+  })
+
+  it("403s on the advisor's proof-of-funds steps", async () => {
+    const res = await auth(request(app).put('/api/v1/student/journey/checks/FUNDS_DOCUMENTS_READY'))
+    expect(res.status).toBe(403)
+    expect(portalRepo.setJourneyCheck).not.toHaveBeenCalled()
+  })
+
+  it('400s on an unknown key', async () => {
+    const res = await auth(request(app).put('/api/v1/student/journey/checks/VISA_GRANTED'))
+    expect(res.status).toBe(400)
   })
 })
 
@@ -446,7 +577,10 @@ describe('authentication', () => {
     ['delete', '/api/v1/student/shortlist/PRG-1001'],
     ['post', '/api/v1/student/choice'],
     ['get', '/api/v1/student/study-plan'],
-    ['post', '/api/v1/student/study-plan/shared'],
+    ['post', '/api/v1/student/study-plan/link'],
+    ['delete', '/api/v1/student/study-plan/link'],
+    ['put', '/api/v1/student/journey/checks/DEPOSIT_PAID'],
+    ['delete', '/api/v1/student/journey/checks/DEPOSIT_PAID'],
   ]
 
   it.each(routes)('%s %s needs a student token', async (method, path) => {

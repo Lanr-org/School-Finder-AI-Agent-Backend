@@ -14,6 +14,8 @@ import { StudentsRepo } from './students.repository.js'
 import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
 import { AuditService } from '../audit/audit.service.js'
 import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
+import JourneyService from '../studentPortal/studentJourney.service.js'
+import type { JourneyCheckKey } from '../../generated/prisma/index.js'
 import type {
   AssignAdvisorToStudentDTO,
   ListStudentsQueryDTO,
@@ -299,5 +301,30 @@ export class StudentsService {
         : null,
       changedAt: entry.created_at,
     }))
+  }
+
+  // ── GET /students/:studentId/journey ────────────────────────────────────
+  // Same journey the student sees, but staff may tick every hand-ticked step (incl. proof of funds).
+  static GetJourney = async (publicId: string, auth: AccessTokenClaims) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+    const journey = await JourneyService.ForStudent(student.id, 'STAFF')
+    if (!journey) throw createError('Student not found', 404, {}, 'NOT_FOUND')
+    return journey
+  }
+
+  // ── PUT / DELETE /students/:studentId/journey/checks/:key ───────────────
+  static SetJourneyCheck = async (
+    publicId: string,
+    key: JourneyCheckKey,
+    done: boolean,
+    auth: AccessTokenClaims,
+  ) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+    return JourneyService.SetCheck(student, key, done, {
+      kind: 'STAFF',
+      userId: auth.sub,
+    })
   }
 }

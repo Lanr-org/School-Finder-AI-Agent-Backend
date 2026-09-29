@@ -4,6 +4,7 @@ import {
   ConversationMode,
   IntakeMonth,
   MessageChannel,
+  type JourneyCheckKey,
   MessageSenderType,
   type ConversationMessages,
   type StudyLevel,
@@ -23,13 +24,14 @@ import {
 import { StudentsRepo } from '../students/students.repository.js'
 import { buildAdvisorLookup } from '../team/advisor-lookup.js'
 import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
-import { deriveJourney, mostAdvancedOpenApplication } from './studentJourney'
+import JourneyService from './studentJourney.service'
 import StudentPortalRepo from './studentPortal.repository'
 import type {
   Journey,
   PortalChat,
   PortalChatMessage,
   ProgrammeMatch,
+  PublicStudyPlan,
   StudentMe,
   StudyPlan,
   UpdateProfileDTO,
@@ -54,16 +56,12 @@ const monthLabel = (month: IntakeMonth) => month.charAt(0) + month.slice(1).toLo
 
 const notFound = () => createError('Programme not found', 404, {}, 'NOT_FOUND')
 
+const sessionEnded = () =>
+  createError('Your session has ended, please sign in again', 401, {}, AUTH_ERROR_CODES.AUTH_SESSION_NOT_FOUND)
+
 const loadStudent = async (studentId: string) => {
   const student = await StudentPortalRepo.findStudent(studentId)
-  if (!student) {
-    throw createError(
-      'Your session has ended, please sign in again',
-      401,
-      {},
-      AUTH_ERROR_CODES.AUTH_SESSION_NOT_FOUND,
-    )
-  }
+  if (!student) throw sessionEnded()
   return student
 }
 
@@ -156,6 +154,32 @@ const scoreOne = async (studentId: string, program: CandidateProgram) => {
   )
 }
 
+// The chosen programme, its real tuition, requirements and next steps; null until a programme is chosen.
+const buildStudyPlan = async (student: PortalStudent): Promise<StudyPlan | null> => {
+  if (!student.chosen_program_id) return null
+  const program = await StudentPortalRepo.findProgramById(student.chosen_program_id)
+  if (!program) return null
+
+  const [match, advisorName] = await Promise.all([scoreOne(student.id, program), advisorNameOf(student)])
+  return {
+    studentName: fullNameOf(student),
+    programme: match,
+    // Only tuition: living and visa costs aren't in our data, and we don't invent them.
+    costBreakdown: [{ label: 'Tuition (per year)', amount: match.tuition }],
+    total: match.tuition,
+    requirementsMet: match.reasons,
+    requirementsMissing: match.missingRequirements,
+    nextSteps: [
+      { title: 'Apply with your Smetase advisor', when: 'Next' },
+      { title: 'Accept the offer and pay the tuition deposit', when: 'After your offer' },
+      { title: 'Take your English test (IELTS, or WAEC if accepted)', when: 'Before your offer deadline' },
+      { title: 'Proof of funds and visa', when: 'About 3 months before you start' },
+    ],
+    advisor: advisorName ? { name: advisorName, email: null } : null,
+    generatedAt: new Date().toISOString(),
+  }
+}
+
 const StudentPortalService = {
   GetMe: async (studentId: string): Promise<StudentMe> => {
     const student = await loadStudent(studentId)
@@ -198,27 +222,15 @@ const StudentPortalService = {
   },
 
   GetJourney: async (studentId: string): Promise<Journey> => {
+    const journey = await JourneyService.ForStudent(studentId)
+    if (!journey) throw sessionEnded()
+    return journey
+  },
+
+  // The student ticks their own steps (deposit, English); proof of funds is the advisor's.
+  SetJourneyCheck: async (studentId: string, key: JourneyCheckKey, done: boolean): Promise<Journey> => {
     const student = await loadStudent(studentId)
-    const [shortlistCount, statuses, advisorName] = await Promise.all([
-      StudentPortalRepo.countShortlist(studentId),
-      StudentPortalRepo.listApplicationStatuses(studentId),
-      advisorNameOf(student),
-    ])
-    return deriveJourney({
-      profile: {
-        studyLevel: student.study_level,
-        destinations: student.target_destinations,
-        intakeSet: Boolean(student.target_intake_month && student.target_intake_year),
-        budgetRange: student.budget_range,
-        academicBackground: student.academic_background,
-        englishTest: student.english_test_score,
-      },
-      shortlistCount,
-      hasChoice: student.chosen_program_id !== null,
-      studyPlanShared: student.study_plan_shared_at !== null,
-      applicationStatus: mostAdvancedOpenApplication(statuses),
-      advisorName,
-    })
+    return JourneyService.SetCheck(student, key, done, { kind: 'STUDENT' })
   },
 
   // Top 10 by score, plus anything shortlisted or chosen, so a saved programme never vanishes.
@@ -262,34 +274,27 @@ const StudentPortalService = {
     return StudentPortalService.GetJourney(studentId)
   },
 
-  GetStudyPlan: async (studentId: string): Promise<StudyPlan | null> => {
-    const student = await loadStudent(studentId)
-    if (!student.chosen_program_id) return null
-    const program = await StudentPortalRepo.findProgramById(student.chosen_program_id)
-    if (!program) return null
+  GetStudyPlan: async (studentId: string): Promise<StudyPlan | null> =>
+    buildStudyPlan(await loadStudent(studentId)),
 
-    const [match, advisorName] = await Promise.all([scoreOne(studentId, program), advisorNameOf(student)])
+  // What a parent or sponsor sees through a public link (null if the student or choice is gone).
+  GetPublicStudyPlan: async (studentId: string): Promise<PublicStudyPlan | null> => {
+    const student = await StudentPortalRepo.findStudent(studentId)
+    if (!student) return null
+    const plan = await buildStudyPlan(student)
+    if (!plan) return null
+    // Allowlisted: first name only, never the full name, email or ids.
     return {
-      studentName: fullNameOf(student),
-      programme: match,
-      // Only tuition: living and visa costs aren't in our data, and we don't invent them.
-      costBreakdown: [{ label: 'Tuition (per year)', amount: match.tuition }],
-      total: match.tuition,
-      requirementsMet: match.reasons,
-      requirementsMissing: match.missingRequirements,
-      nextSteps: [
-        { title: 'Apply with your Smetase advisor', when: 'Next' },
-        { title: 'Accept the offer and pay the tuition deposit', when: 'After your offer' },
-        { title: 'Take your English test (IELTS, or WAEC if accepted)', when: 'Before your offer deadline' },
-        { title: 'Proof of funds and visa', when: 'About 3 months before you start' },
-      ],
-      advisor: advisorName ? { name: advisorName, email: null } : null,
-      generatedAt: new Date().toISOString(),
+      studentFirstName: student.contact.first_name,
+      programme: plan.programme,
+      costBreakdown: plan.costBreakdown,
+      total: plan.total,
+      requirementsMet: plan.requirementsMet,
+      requirementsMissing: plan.requirementsMissing,
+      nextSteps: plan.nextSteps,
+      advisor: plan.advisor,
+      generatedAt: plan.generatedAt,
     }
-  },
-
-  MarkStudyPlanShared: async (studentId: string) => {
-    await StudentPortalRepo.markStudyPlanShared(studentId)
   },
 
   // One continuous thread across all the student's conversations (and both channels).

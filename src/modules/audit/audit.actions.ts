@@ -17,6 +17,8 @@ export const AUDIT_ACTIONS = {
   STUDENT_STATUS_CHANGED: 'student.status_changed',
   STUDENT_IDENTITY_LINKED: 'student.identity_linked',
   STUDENT_MERGED: 'student.merged',
+  JOURNEY_CHECK_SET: 'student.journey_check_set',
+  JOURNEY_CHECK_CLEARED: 'student.journey_check_cleared',
   APPLICATION_CREATED: 'application.created',
   APPLICATION_STATUS_CHANGED: 'application.status_changed',
   SCHOOL_CREATED: 'school.created',

@@ -1,4 +1,6 @@
 import prisma from '../../database/prisma'
+import type { Db } from '../../database/transaction'
+import type { JourneyCheckKey } from '../../generated/prisma/index.js'
 
 // Same selection as MatchingRepo.findMatchingPrograms, so the scorer accepts it.
 const programForScoring = {
@@ -59,6 +61,22 @@ const StudentPortalRepo = {
         data: { chosen_program_id: null },
       }),
     ]),
+
+  findJourneyChecks: async (studentId: string) =>
+    (
+      await prisma.studentJourneyCheck.findMany({ where: { student_id: studentId }, select: { key: true } })
+    ).map((check) => check.key),
+
+  // Idempotent: ticking twice keeps the first tick (and who made it).
+  setJourneyCheck: (studentId: string, key: JourneyCheckKey, doneByUser: string | null, tx: Db = prisma) =>
+    tx.studentJourneyCheck.upsert({
+      where: { student_id_key: { student_id: studentId, key } },
+      create: { student_id: studentId, key, done_by_user: doneByUser },
+      update: {},
+    }),
+
+  clearJourneyCheck: (studentId: string, key: JourneyCheckKey, tx: Db = prisma) =>
+    tx.studentJourneyCheck.deleteMany({ where: { student_id: studentId, key } }),
 
   // Only the first share is recorded.
   markStudyPlanShared: (studentId: string) =>

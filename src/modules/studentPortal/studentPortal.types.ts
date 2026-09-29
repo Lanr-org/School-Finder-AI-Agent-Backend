@@ -1,4 +1,4 @@
-import type { ApplicationStatus, IntakeMonth } from '../../generated/prisma/index.js'
+import type { ApplicationStatus, IntakeMonth, JourneyCheckKey } from '../../generated/prisma/index.js'
 
 // Mirrors smetase-web/src/lib/api/types.ts — the contract the student web app reads.
 
@@ -7,7 +7,15 @@ export type JourneyStageStatus = 'DONE' | 'CURRENT' | 'UPCOMING'
 // Who does the work at this stage; ADVISOR stages are the human handoff points.
 export type StageOwner = 'YOU' | 'SMETASE' | 'ADVISOR'
 
-export type ChecklistItem = { id: string; label: string; done: boolean }
+// checkKey: set for items ticked by hand (student_journey_checks), null for items derived from data.
+// canTick: whether the student may tick it themselves (staff can tick any checkKey item).
+export type ChecklistItem = {
+  id: string
+  label: string
+  done: boolean
+  checkKey: JourneyCheckKey | null
+  canTick: boolean
+}
 
 export type JourneyStage = {
   key: JourneyStageKey
@@ -45,6 +53,8 @@ export type JourneyInput = {
   // The most advanced open application (REJECTED/WITHDRAWN ignored), if any.
   applicationStatus: ApplicationStatus | null
   advisorName: string | null
+  // Steps ticked by hand (student_journey_checks).
+  checks: ReadonlySet<JourneyCheckKey>
 }
 
 export type StudentMe = {
@@ -102,6 +112,11 @@ export type StudyPlan = {
   advisor: { name: string; email: string | null } | null
   generatedAt: string
 }
+
+// What a parent or sponsor sees through a public link: first name only, no ids or contact details.
+export type PublicStudyPlan = Omit<StudyPlan, 'studentName'> & { studentFirstName: string }
+
+export type StudyPlanShareLink = { url: string; expiresAt: string }
 
 export type PortalChatMessage = {
   id: string

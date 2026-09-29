@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 import { successResponse } from '../../http/response'
+import type { JourneyCheckKey } from '../../generated/prisma/index.js'
+import StudyPlanLinkService from '../studyPlanLinks/studyPlanLinks.service'
 import StudentPortalService from './studentPortal.service'
 import type { UpdateProfileDTO } from './studentPortal.types'
 
@@ -89,10 +91,29 @@ const StudentPortalController = {
     }
   },
 
-  MarkStudyPlanShared: async (req: Request, res: Response, next: NextFunction) => {
+  CreateStudyPlanLink: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await StudentPortalService.MarkStudyPlanShared(studentIdOf(req))
-      send(req, res, 'Study plan share recorded')
+      const link = await StudyPlanLinkService.Create(studentIdOf(req))
+      res.status(201).send(successResponse(true, 'Study plan link created', link, { requestId: req.id }))
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  RevokeStudyPlanLinks: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await StudyPlanLinkService.RevokeAll(studentIdOf(req))
+      send(req, res, 'Study plan links revoked')
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  SetJourneyCheck: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const key = req.params.key as JourneyCheckKey
+      const done = req.method === 'PUT'
+      send(req, res, 'Journey updated', await StudentPortalService.SetJourneyCheck(studentIdOf(req), key, done))
     } catch (error) {
       next(error)
     }
