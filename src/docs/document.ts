@@ -12,6 +12,7 @@ import { registerConversationsDocs } from '../modules/conversations/conversation
 import { registerRecommendationsDocs } from '../modules/recommendations/recommendations.docs'
 import { registerSettingsDocs } from '../modules/settings/settings.docs'
 import { registerBulletinsDocs } from '../modules/bulletins/bulletins.docs'
+import { registerNotificationsDocs } from '../modules/notifications/notifications.docs'
 import { registerVisaRatesDocs } from '../modules/visaRates/visaRates.docs'
 import { registerTelegramDocs } from '../integrations/telegram/telegram.docs'
 import { registerApplicationsDocs } from '../modules/applications/applications.docs'
@@ -51,6 +52,7 @@ registerBulletinsDocs(registry)
 registerVisaRatesDocs(registry)
 registerAuditDocs(registry)
 registerDashboardDocs(registry)
+registerNotificationsDocs(registry)
 registerStudentAuthDocs(registry)
 const { journeySchema, programmeMatchSchema, money } =
   registerStudentPortalDocs(registry)

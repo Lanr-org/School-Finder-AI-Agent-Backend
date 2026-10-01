@@ -59,6 +59,7 @@ model Users {
   student_status_changes        StudentStatusHistory[]
   audit_logs                    AuditLog[]
   journey_checks                StudentJourneyCheck[]
+  notifications                 Notification[]
 
   @@map("users")
 }
@@ -886,4 +887,34 @@ model AuditLog {
   @@index([actor_id, created_at(sort: Desc)])
   @@index([action, created_at(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ==========================================
+// NOTIFICATIONS
+// ==========================================
+
+enum NotificationType {
+  ASSIGNMENT
+  CONVERSATION
+  FOLLOW_UP
+  RECOMMENDATION
+  TEAM
+  SYSTEM
+}
+
+// In-app notifications for staff. link is a staff-app path (e.g. /conversations/CNV-1).
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  user_id    String           @db.Uuid
+  type       NotificationType
+  title      String           @db.VarChar(160)
+  body       String           @db.VarChar(500)
+  link       String?          @db.VarChar(255)
+  read_at    DateTime?        @db.Timestamptz(6)
+  created_at DateTime         @default(now()) @db.Timestamptz(6)
+
+  user Users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, read_at, created_at(sort: Desc)])
+  @@map("notifications")
 }

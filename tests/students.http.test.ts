@@ -10,6 +10,7 @@ import { AdvisorsRepo } from '../src/modules/advisors/advisors.repository'
 import { StudentStatusHistoryRepo } from '../src/modules/students/statusHistory.repository'
 import { AuditRepo } from '../src/modules/audit/audit.repository'
 import StudentPortalRepo from '../src/modules/studentPortal/studentPortal.repository'
+import { NotificationsService } from '../src/modules/notifications/notifications.service'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,10 @@ vi.mock('../src/modules/students/students.repository', () => ({
     unassignAdvisorFromStudent: vi.fn(),
     updateStudentStatus: vi.fn(),
   },
+}))
+
+vi.mock('../src/modules/notifications/notifications.service', () => ({
+  NotificationsService: { notify: vi.fn() },
 }))
 
 vi.mock('../src/modules/students/statusHistory.repository', () => ({
@@ -345,6 +350,11 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
       ADVISOR_ID,
       ADMIN_ID,
       expect.anything(),
+    )
+    // The newly assigned advisor is told, with a link straight to the student.
+    expect(NotificationsService.notify).toHaveBeenCalledWith(
+      [ADVISOR_ID],
+      expect.objectContaining({ type: 'ASSIGNMENT', link: '/students/STU-8440' }),
     )
     expect(auditRepoMock.record).toHaveBeenCalledWith(
       expect.anything(),

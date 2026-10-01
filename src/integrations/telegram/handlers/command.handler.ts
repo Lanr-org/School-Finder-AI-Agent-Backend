@@ -1,5 +1,7 @@
 import { InlineKeyboard } from 'grammy'
 import { logger } from '../../../config/logger.js'
+import { MessageChannel } from '../../../generated/prisma/index.js'
+import { AdvisorRequestService } from '../../../modules/conversations/advisorRequest.service.js'
 import StudentLinkService from '../../../modules/studentLink/studentLink.service.js'
 import type { LinkOutcome } from '../../../modules/studentLink/studentLink.types.js'
 import { TelegramOutboundService } from '../services/telegram-outbound.service.js'
@@ -96,10 +98,21 @@ export class TelegramCommandHandler {
         return true
       }
 
+      case 'advisor': {
+        const { alreadyRequested } = await AdvisorRequestService.Request(studentId, MessageChannel.TELEGRAM)
+        await TelegramOutboundService.sendMessage(
+          chatId,
+          alreadyRequested
+            ? "You've already asked for an advisor. The team has been told and will follow up here. You can keep chatting with me in the meantime."
+            : "Done, I've asked the Smetase team to have an advisor follow up with you here. You can keep chatting with me in the meantime."
+        )
+        return true
+      }
+
       case 'help':
         await TelegramOutboundService.sendMessage(
           chatId,
-          'Here is how you can use Smetase:\n\n• Type your questions about studying abroad.\n• /plan to open your plan on the web.\n• /start to restart onboarding.'
+          'Here is how you can use Smetase:\n\n• Type your questions about studying abroad.\n• /plan to open your plan on the web.\n• /advisor to talk to a real advisor.\n• /start to restart onboarding.'
         )
         return true
 

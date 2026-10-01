@@ -94,6 +94,15 @@ class TeamRepo {
     })
   }
 
+  // Recipients for notifications that have no assigned advisor to go to.
+  static async findActiveAdminIds() {
+    const admins = await prisma.users.findMany({
+      where: { role: 'ADMIN', status: 'ACTIVE' },
+      select: { id: true },
+    })
+    return admins.map((admin) => admin.id)
+  }
+
   static async findUsersByIds(ids: string[]) {
     return prisma.users.findMany({
       where: { id: { in: ids } },

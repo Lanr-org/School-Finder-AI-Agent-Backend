@@ -2,6 +2,7 @@ import { createError } from '../../common/errors/AppError'
 import { AUTH_ERROR_CODES } from '../../common/errors/errorCodes'
 import {
   ConversationMode,
+  ConversationStatus,
   IntakeMonth,
   MessageChannel,
   type JourneyCheckKey,
@@ -11,6 +12,10 @@ import {
 } from '../../generated/prisma/index.js'
 import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
 import { ContactsRepo } from '../contacts/contacts.repository.js'
+import {
+  AdvisorRequestService,
+  type AdvisorRequestResult,
+} from '../conversations/advisorRequest.service.js'
 import { ConversationsRepo } from '../conversations/conversations.repository.js'
 import { StudentMessageService } from '../conversations/studentMessage.service.js'
 import { normalizeCountry } from '../matching/matching.normalizers.js'
@@ -311,6 +316,8 @@ const StudentPortalService = {
     return {
       messages: messages.map(toChatMessage(advisorName)),
       advisorHandling: current?.mode === ConversationMode.HUMAN_ADVISOR,
+      // The student asked for a person; the AI still replies until staff take over.
+      advisorRequested: current?.status === ConversationStatus.ESCALATED,
       // The AI owes a reply: it's AI-handled and the student spoke last, recently. The web shows
       // a typing indicator and polls faster until the queued reply lands.
       awaitingReply:
@@ -318,6 +325,11 @@ const StudentPortalService = {
         last?.sender_type === MessageSenderType.STUDENT &&
         Date.now() - last.created_at.getTime() < AWAITING_REPLY_WINDOW_MS,
     }
+  },
+
+  RequestAdvisor: async (studentId: string): Promise<AdvisorRequestResult> => {
+    await loadStudent(studentId)
+    return AdvisorRequestService.Request(studentId, MessageChannel.WEB)
   },
 
   // Saves the student's message and returns it at once; the AI reply (if the AI is handling

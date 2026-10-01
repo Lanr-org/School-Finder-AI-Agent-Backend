@@ -76,3 +76,10 @@ studentPortalRouter.post(
   validate(sendMessageSchema),
   StudentPortalController.SendMessage,
 )
+// "Talk to an advisor": flags the thread for staff; the AI keeps replying until one takes over.
+studentPortalRouter.post(
+  '/advisor-request',
+  StudentAuthenticateMiddleware,
+  messageRateLimit,
+  StudentPortalController.RequestAdvisor,
+)

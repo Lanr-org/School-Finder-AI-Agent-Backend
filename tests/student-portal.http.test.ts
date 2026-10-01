@@ -14,6 +14,7 @@ import { VisaRatesRepo } from '../src/modules/visaRates/visaRates.repository'
 import { ConversationsRepo } from '../src/modules/conversations/conversations.repository'
 import { ContactsRepo } from '../src/modules/contacts/contacts.repository'
 import { StudentMessageService } from '../src/modules/conversations/studentMessage.service'
+import { AdvisorRequestService } from '../src/modules/conversations/advisorRequest.service'
 import { CentrifugoClient } from '../src/integrations/centrifugo/services/centrifugo.client'
 import StudyPlanLinkRepo from '../src/modules/studyPlanLinks/studyPlanLinks.repository'
 import { AuditRepo } from '../src/modules/audit/audit.repository'
@@ -65,6 +66,9 @@ vi.mock('../src/modules/contacts/contacts.repository', () => ({
 }))
 vi.mock('../src/modules/conversations/studentMessage.service', () => ({
   StudentMessageService: { Receive: vi.fn() },
+}))
+vi.mock('../src/modules/conversations/advisorRequest.service', () => ({
+  AdvisorRequestService: { Request: vi.fn() },
 }))
 vi.mock('../src/integrations/centrifugo/services/centrifugo.client', () => ({
   CentrifugoClient: { publish: vi.fn() },
@@ -512,6 +516,25 @@ describe('chat', () => {
     expect(res.body.data.advisorHandling).toBe(true)
   })
 
+  it('reports advisorRequested once the thread is flagged, while the AI keeps handling it', async () => {
+    conversationsRepo.findCurrentConversation.mockResolvedValue({
+      id: 'conv-uuid',
+      mode: 'AI_BOT',
+      status: 'ESCALATED',
+    } as never)
+    const res = await auth(request(app).get('/api/v1/student/messages'))
+    expect(res.body.data.advisorRequested).toBe(true)
+    expect(res.body.data.advisorHandling).toBe(false)
+
+    conversationsRepo.findCurrentConversation.mockResolvedValue({
+      id: 'conv-uuid',
+      mode: 'AI_BOT',
+      status: 'ACTIVE',
+    } as never)
+    const normal = await auth(request(app).get('/api/v1/student/messages'))
+    expect(normal.body.data.advisorRequested).toBe(false)
+  })
+
   it('reports awaitingReply while the AI owes a recent student message a reply', async () => {
     const recent = { ...makeMessage('m1', 'STUDENT', 'Hi'), created_at: new Date() }
     conversationsRepo.findStudentMessages.mockResolvedValue([recent] as never)
@@ -570,6 +593,32 @@ describe('chat', () => {
     expect(messageService.Receive).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'new-conv-uuid' }))
   })
 
+  it('requests an advisor on the web channel', async () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent() as never)
+    vi.mocked(AdvisorRequestService).Request.mockResolvedValue({ alreadyRequested: false })
+
+    const res = await auth(request(app).post('/api/v1/student/advisor-request'))
+    expect(res.status).toBe(200)
+    expect(AdvisorRequestService.Request).toHaveBeenCalledWith(STUDENT_ID, 'WEB')
+    expect(res.body.data).toEqual({ alreadyRequested: false })
+  })
+
+  it('treats a repeat advisor request as a no-op', async () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent() as never)
+    vi.mocked(AdvisorRequestService).Request.mockResolvedValue({ alreadyRequested: true })
+
+    const res = await auth(request(app).post('/api/v1/student/advisor-request'))
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual({ alreadyRequested: true })
+  })
+
+  it('rejects an advisor request when the student no longer exists', async () => {
+    portalRepo.findStudent.mockResolvedValue(null as never)
+    const res = await auth(request(app).post('/api/v1/student/advisor-request'))
+    expect(res.status).toBe(401)
+    expect(AdvisorRequestService.Request).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['empty', '   '],
     ['too long', 'x'.repeat(2001)],
@@ -584,6 +633,7 @@ describe('authentication', () => {
   const routes: [string, string][] = [
     ['get', '/api/v1/student/messages'],
     ['post', '/api/v1/student/messages'],
+    ['post', '/api/v1/student/advisor-request'],
     ['get', '/api/v1/student/me'],
     ['patch', '/api/v1/student/me/profile'],
     ['get', '/api/v1/student/journey'],

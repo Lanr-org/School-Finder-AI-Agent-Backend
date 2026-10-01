@@ -13,6 +13,7 @@ import { AdvisorsRepo } from '../advisors/advisors.repository.js'
 import { StudentsRepo } from './students.repository.js'
 import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
 import { AuditService } from '../audit/audit.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
 import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
 import JourneyService from '../studentPortal/studentJourney.service.js'
 import type { JourneyCheckKey } from '../../generated/prisma/index.js'
@@ -211,6 +212,16 @@ export class StudentsService {
         after: { status: after.status, advisor: advisorRef },
       }),
     )
+    const studentName =
+      [student.contact.first_name, student.contact.last_name]
+        .filter(Boolean)
+        .join(' ') || student.public_id
+    await NotificationsService.notify([advisor.id], {
+      type: 'ASSIGNMENT',
+      title: 'New student assigned to you',
+      body: `${studentName} (${student.public_id}) was assigned to you.`,
+      link: `/students/${student.public_id}`,
+    })
     const advisorLookup = new Map([[advisor.id, advisorRef]])
     return toStudentResponse(
       { ...updated, contact: student.contact },

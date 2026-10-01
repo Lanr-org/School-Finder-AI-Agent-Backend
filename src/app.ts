@@ -17,6 +17,7 @@ import { studentsRouter } from './modules/students/students.routes'
 import { advisorsRouter } from './modules/advisors/advisors.routes'
 import { settingsRouter } from './modules/settings/settings.routes'
 import { bulletinsRouter } from './modules/bulletins/bulletins.routes'
+import { notificationsRouter } from './modules/notifications/notifications.routes'
 import { visaRatesRouter } from './modules/visaRates/visaRates.routes'
 import {
   recommendationRunsRouter,
@@ -68,6 +69,7 @@ app.use(`${version}/visa-success-rates`, visaRatesRouter)
 app.use(`${version}/recommendation-runs`, recommendationRunsRouter)
 app.use(`${version}/recommendations`, recommendationsRouter)
 app.use(`${version}/conversations`, conversationsRouter)
+app.use(`${version}/notifications`, notificationsRouter)
 app.use(`${version}/applications`, applicationsRouter)
 app.use(`${version}/audit-logs`, auditLogsRouter)
 app.use(`${version}/dashboard`, dashboardRouter)

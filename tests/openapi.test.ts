@@ -20,6 +20,7 @@ import { conversationsRouter } from '../src/modules/conversations/conversations.
 import { applicationsRouter } from '../src/modules/applications/applications.routes'
 import { auditLogsRouter } from '../src/modules/audit/audit.routes'
 import { dashboardRouter } from '../src/modules/dashboard/dashboard.routes'
+import { notificationsRouter } from '../src/modules/notifications/notifications.routes'
 import { studentRouter } from '../src/modules/studentAuth/studentAuth.routes'
 import { studentPortalRouter } from '../src/modules/studentPortal/studentPortal.routes'
 import { studentLinkRouter } from '../src/modules/studentLink/studentLink.routes'
@@ -46,6 +47,7 @@ const MOUNTS: [prefix: string, router: Router][] = [
   ['/api/v1/applications', applicationsRouter],
   ['/api/v1/audit-logs', auditLogsRouter],
   ['/api/v1/dashboard', dashboardRouter],
+  ['/api/v1/notifications', notificationsRouter],
   ['/api/v1/student', studentRouter],
   ['/api/v1/student', studentPortalRouter],
   ['/api/v1/student', studentLinkRouter],

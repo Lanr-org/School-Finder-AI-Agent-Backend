@@ -16,6 +16,15 @@ const send = (req: Request, res: Response, message: string, data?: unknown) =>
   res.status(200).send(successResponse(true, message, data, { requestId: req.id }))
 
 const StudentPortalController = {
+  RequestAdvisor: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await StudentPortalService.RequestAdvisor(studentIdOf(req))
+      send(req, res, result.alreadyRequested ? 'Advisor already requested' : 'Advisor requested', result)
+    } catch (error) {
+      next(error)
+    }
+  },
+
   GetMe: async (req: Request, res: Response, next: NextFunction) => {
     try {
       send(req, res, 'Student retrieved', await StudentPortalService.GetMe(studentIdOf(req)))

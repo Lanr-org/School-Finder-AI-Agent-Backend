@@ -269,12 +269,32 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
             z.object({
               messages: z.array(chatMessageSchema),
               advisorHandling: z.boolean(),
+              advisorRequested: z.boolean(),
               awaitingReply: z.boolean(),
             }),
           ),
         ),
       },
       401: unauthorized,
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/student/advisor-request',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Ask to talk to an advisor',
+    description: `${PORTAL_NOTE} Flags the current conversation for staff (advisorRequested becomes true on GET /student/messages) and notifies the assigned advisor, or every active admin if no advisor is assigned yet. The AI keeps replying until a staff member takes over. Calling it again is a no-op (alreadyRequested true, no second notification). Shares the 20-a-minute student rate limit.`,
+    responses: {
+      200: {
+        description: 'Advisor requested (or already requested).',
+        content: json(
+          successEnvelope(z.object({ alreadyRequested: z.boolean() })),
+        ),
+      },
+      401: unauthorized,
+      429: errorContent('More than 20 requests in a minute.'),
     },
   })
 

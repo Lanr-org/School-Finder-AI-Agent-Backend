@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TelegramCommandHandler } from '../src/integrations/telegram/handlers/command.handler'
 import { TelegramOutboundService } from '../src/integrations/telegram/services/telegram-outbound.service'
 import StudentLinkService from '../src/modules/studentLink/studentLink.service'
+import { AdvisorRequestService } from '../src/modules/conversations/advisorRequest.service'
 
 vi.mock('../src/integrations/telegram/services/telegram-outbound.service', () => ({
   TelegramOutboundService: { sendMessage: vi.fn() },
+}))
+vi.mock('../src/modules/conversations/advisorRequest.service', () => ({
+  AdvisorRequestService: { Request: vi.fn() },
 }))
 vi.mock('../src/modules/studentLink/studentLink.service', () => ({
   default: { CreateWebLink: vi.fn() },
@@ -27,6 +31,34 @@ describe('TelegramCommandHandler.parseLinkToken', () => {
     [undefined, null],
   ])('%s → %s', (text, expected) => {
     expect(TelegramCommandHandler.parseLinkToken(text)).toBe(expected)
+  })
+})
+
+describe('/advisor', () => {
+  const request = vi.mocked(AdvisorRequestService).Request
+
+  it('asks for an advisor on the Telegram channel and confirms', async () => {
+    request.mockResolvedValue({ alreadyRequested: false })
+
+    const handled = await TelegramCommandHandler.handleCommand('2011329752', '/advisor', 'student-uuid')
+
+    expect(handled).toBe(true)
+    expect(request).toHaveBeenCalledWith('student-uuid', 'TELEGRAM')
+    expect(send.mock.calls[0]![1]).toContain("I've asked the Smetase team")
+  })
+
+  it('tells the student when they already asked', async () => {
+    request.mockResolvedValue({ alreadyRequested: true })
+
+    await TelegramCommandHandler.handleCommand('2011329752', '/advisor', 'student-uuid')
+
+    expect(send.mock.calls[0]![1]).toContain("already asked")
+  })
+
+  it('is listed in /help', async () => {
+    await TelegramCommandHandler.handleCommand('2011329752', '/help', 'student-uuid')
+
+    expect(send.mock.calls[0]![1]).toContain('/advisor')
   })
 })
 

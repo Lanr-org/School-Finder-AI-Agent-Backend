@@ -8,6 +8,7 @@ import {
   type MessageChannel,
   type Prisma,
 } from '../../generated/prisma/index.js'
+import type { Db } from '../../database/transaction.js'
 import type { ListConversationsFilters } from './conversations.types.js'
 
 const withStudentAndContact = {
@@ -76,6 +77,15 @@ export class ConversationsRepo {
     })
   }
 
+  // Student-requested: flags the thread for staff but leaves the mode alone, so
+  // the AI keeps replying until an advisor actually takes over.
+  static requestAdvisor = async (id: string, db: Db = prisma) => {
+    return db.conversations.update({
+      where: { id },
+      data: { status: ConversationStatus.ESCALATED, last_activity_at: new Date() },
+    })
+  }
+
   static resolveConversation = async (id: string) => {
     return prisma.conversations.update({
       where: { id },
@@ -100,6 +110,18 @@ export class ConversationsRepo {
         status: { in: [ConversationStatus.ACTIVE, ConversationStatus.ESCALATED] },
       },
       orderBy: { created_at: 'desc' },
+    })
+  }
+
+  // Just what a staff notification needs about the student.
+  static findStudentForNotice = async (studentId: string) => {
+    return prisma.student.findUnique({
+      where: { id: studentId },
+      select: {
+        public_id: true,
+        assigned_advisor_id: true,
+        contact: { select: { first_name: true, last_name: true } },
+      },
     })
   }
 

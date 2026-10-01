@@ -132,6 +132,9 @@ export type PortalChat = {
   messages: PortalChatMessage[]
   // true once an advisor has taken over: the AI stops replying until it's handed back.
   advisorHandling: boolean
+  // true once the student asked for an advisor (the thread is flagged for staff); the AI
+  // still replies until staff take over.
+  advisorRequested: boolean
   // true while a queued AI reply is on its way (show "typing", poll faster).
   awaitingReply: boolean
 }
