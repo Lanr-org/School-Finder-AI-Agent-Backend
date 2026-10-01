@@ -1,10 +1,11 @@
 import { logger } from '../../config/logger.js'
-import { ConversationMode, MessageSenderType, type MessageChannel } from '../../generated/prisma/index.js'
-import { AIReplyService } from '../ai/ai-reply.service.js'
+import {
+  ConversationMode,
+  MessageSenderType,
+  type MessageChannel,
+} from '../../generated/prisma/index.js'
+import { aiReplyQueue } from '../../jobs/queues.js'
 import { ConversationsRepo } from './conversations.repository.js'
-
-export const AI_FALLBACK_REPLY =
-  "Sorry, I'm having trouble responding right now — please try again in a moment."
 
 export type ReceiveStudentMessageInput = {
   conversationId: string
@@ -15,10 +16,16 @@ export type ReceiveStudentMessageInput = {
 
 export class StudentMessageService {
   /**
-   * Saves a student's message (always, even mid-escalation, so the advisor sees it), then
-   * answers with the AI only while the conversation is still AI-handled.
+   * Saves a student's message (always, even mid-escalation, so the advisor sees it), then,
+   * while the conversation is AI-handled, queues the AI reply (see AIReplyJob). The reply
+   * arrives later: over Telegram, or on the web app's next poll.
    */
-  static Receive = async ({ conversationId, studentId, text, channel }: ReceiveStudentMessageInput) => {
+  static Receive = async ({
+    conversationId,
+    studentId,
+    text,
+    channel,
+  }: ReceiveStudentMessageInput) => {
     const message = await ConversationsRepo.createMessage(
       conversationId,
       MessageSenderType.STUDENT,
@@ -28,22 +35,16 @@ export class StudentMessageService {
 
     const mode = await ConversationsRepo.findConversationMode(conversationId)
     if (mode !== ConversationMode.AI_BOT) {
-      return { message, reply: null }
+      return { message, replyQueued: false }
     }
 
-    try {
-      const reply = await AIReplyService.GenerateReply(conversationId, studentId, channel)
-      return { message, reply }
-    } catch (error) {
-      logger.error({ error: (error as Error).message, conversationId }, 'AI reply generation failed.')
-      // Saved so staff can see the student got an error instead of an answer.
-      const reply = await ConversationsRepo.createMessage(
-        conversationId,
-        MessageSenderType.AGENT,
-        AI_FALLBACK_REPLY,
-        channel,
-      )
-      return { message, reply }
-    }
+    // The job id is the message id, so the same message is never answered twice.
+    await aiReplyQueue.add(
+      'reply',
+      { conversationId, studentId, messageId: message.id, channel },
+      { jobId: `ai_${message.id}` },
+    )
+    logger.debug({ conversationId, messageId: message.id }, 'Queued AI reply.')
+    return { message, replyQueued: true }
   }
 }

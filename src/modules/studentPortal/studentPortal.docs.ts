@@ -260,12 +260,18 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     tags: ['Student portal'],
     security: [{ bearerAuth: [] }],
     summary: "Get the signed-in student's chat",
-    description: `${PORTAL_NOTE} The latest 50 messages across all the student's conversations and both channels (Telegram and web), oldest first. advisorHandling is true once an advisor has taken over; the AI doesn't reply until it's handed back. The web app polls this for advisor replies.`,
+    description: `${PORTAL_NOTE} The latest 50 messages across all the student's conversations and both channels (Telegram and web), oldest first. advisorHandling is true once an advisor has taken over; the AI doesn't reply until it's handed back. awaitingReply is true while a queued AI reply is on its way (the AI is handling the chat and the student spoke last, under 2 minutes ago). The web app polls this for AI and advisor replies.`,
     responses: {
       200: {
         description: 'Messages retrieved.',
         content: json(
-          successEnvelope(z.object({ messages: z.array(chatMessageSchema), advisorHandling: z.boolean() })),
+          successEnvelope(
+            z.object({
+              messages: z.array(chatMessageSchema),
+              advisorHandling: z.boolean(),
+              awaitingReply: z.boolean(),
+            }),
+          ),
         ),
       },
       401: unauthorized,
@@ -278,11 +284,11 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     tags: ['Student portal'],
     security: [{ bearerAuth: [] }],
     summary: 'Send a chat message',
-    description: `${PORTAL_NOTE} Saves the message on the web channel. While the AI handles the conversation, its reply is generated in the same request and returned after the student's message; once an advisor has taken over, only the student's message is returned and the advisor answers later. If there's no open conversation (the last one was resolved), a new one is started. Limited to 20 messages a minute per student.`,
+    description: `${PORTAL_NOTE} Saves the message on the web channel and returns it straight away. While the AI handles the conversation, its reply is queued and appears on a later GET /student/messages (awaitingReply is true until then); once an advisor has taken over, the advisor answers instead. Several messages sent in quick succession get one AI reply. If there's no open conversation (the last one was resolved), a new one is started. Limited to 20 messages a minute per student.`,
     request: { body: { required: true, content: json(sendMessageSchema) } },
     responses: {
       201: {
-        description: "Message saved; returns it, plus the AI's reply when there is one.",
+        description: "Message saved; returns just the student's message.",
         content: json(successEnvelope(z.object({ messages: z.array(chatMessageSchema) }))),
       },
       400: errorContent('Validation failed (empty, or longer than 2000 characters).'),

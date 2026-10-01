@@ -29,6 +29,27 @@ export const telegramInboundQueue = new Queue('telegram-inbound', {
 })
 
 /**
+ * Queue for AI replies to student messages (web and Telegram). One attempt only:
+ * the LLM providers already retry and fall back, and a second attempt could post a
+ * duplicate reply.
+ */
+export type AiReplyJob = {
+  conversationId: string
+  studentId: string
+  messageId: string
+  channel: 'TELEGRAM' | 'WEB'
+}
+
+export const aiReplyQueue = new Queue<AiReplyJob>('ai-reply', {
+  connection,
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: true,
+    removeOnFail: 100,
+  },
+})
+
+/**
  * Queue for outgoing messages to Telegram API (Outbound sending)
  */
 export const telegramOutboundQueue = new Queue('telegram-outbound', {

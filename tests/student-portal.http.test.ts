@@ -512,10 +512,33 @@ describe('chat', () => {
     expect(res.body.data.advisorHandling).toBe(true)
   })
 
-  it('sends a message on the web channel and returns it with the AI reply', async () => {
+  it('reports awaitingReply while the AI owes a recent student message a reply', async () => {
+    const recent = { ...makeMessage('m1', 'STUDENT', 'Hi'), created_at: new Date() }
+    conversationsRepo.findStudentMessages.mockResolvedValue([recent] as never)
+    const waiting = await auth(request(app).get('/api/v1/student/messages'))
+    expect(waiting.body.data.awaitingReply).toBe(true)
+
+    // Answered: the AI spoke last.
+    conversationsRepo.findStudentMessages.mockResolvedValue([recent, makeMessage('m2', 'AGENT', 'Hello!')] as never)
+    const answered = await auth(request(app).get('/api/v1/student/messages'))
+    expect(answered.body.data.awaitingReply).toBe(false)
+
+    // Too old: the job must have failed, so stop showing "typing".
+    conversationsRepo.findStudentMessages.mockResolvedValue([makeMessage('m1', 'STUDENT', 'Hi')] as never)
+    const stale = await auth(request(app).get('/api/v1/student/messages'))
+    expect(stale.body.data.awaitingReply).toBe(false)
+
+    // An advisor is handling it: no AI reply is coming.
+    conversationsRepo.findStudentMessages.mockResolvedValue([recent] as never)
+    conversationsRepo.findCurrentConversation.mockResolvedValue({ id: 'conv-uuid', mode: 'HUMAN_ADVISOR' } as never)
+    const advisor = await auth(request(app).get('/api/v1/student/messages'))
+    expect(advisor.body.data.awaitingReply).toBe(false)
+  })
+
+  it('sends a message on the web channel and returns just that message (the reply is queued)', async () => {
     messageService.Receive.mockResolvedValue({
       message: makeMessage('m1', 'STUDENT', 'Which schools fit me?'),
-      reply: makeMessage('m2', 'AGENT', 'Here are three.'),
+      replyQueued: true,
     } as never)
 
     const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: '  Which schools fit me?  ' })
@@ -526,28 +549,20 @@ describe('chat', () => {
       text: 'Which schools fit me?',
       channel: 'WEB',
     })
-    expect(res.body.data.messages.map((m: { id: string }) => m.id)).toEqual(['m1', 'm2'])
+    expect(res.body.data.messages.map((m: { id: string }) => m.id)).toEqual(['m1'])
     expect(vi.mocked(CentrifugoClient).publish).toHaveBeenCalledWith(
       'admin:dashboard',
       expect.objectContaining({ event: 'message.created' }),
     )
   })
 
-  it('returns only the student message while an advisor is handling the chat', async () => {
-    messageService.Receive.mockResolvedValue({
-      message: makeMessage('m1', 'STUDENT', 'Are you there?'),
-      reply: null,
-    } as never)
-
-    const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: 'Are you there?' })
-    expect(res.status).toBe(201)
-    expect(res.body.data.messages).toHaveLength(1)
-  })
-
   it('starts a new conversation when the last one was resolved', async () => {
     conversationsRepo.findCurrentConversation.mockResolvedValue(null)
     vi.mocked(ContactsRepo).createStudentConversation.mockResolvedValue({ id: 'new-conv-uuid' } as never)
-    messageService.Receive.mockResolvedValue({ message: makeMessage('m1', 'STUDENT', 'Hello again'), reply: null } as never)
+    messageService.Receive.mockResolvedValue({
+      message: makeMessage('m1', 'STUDENT', 'Hello again'),
+      replyQueued: true,
+    } as never)
 
     const res = await auth(request(app).post('/api/v1/student/messages')).send({ content: 'Hello again' })
     expect(res.status).toBe(201)

@@ -43,6 +43,8 @@ import type {
 const POOL_CAP = 300 // same candidate pool as recommendation runs
 const MATCH_LIMIT = 10
 const MESSAGE_LIMIT = 50
+// A reply slower than this is treated as lost (the job failed): stop showing "typing".
+const AWAITING_REPLY_WINDOW_MS = 2 * 60_000
 
 const LEVEL_LABEL: Record<StudyLevel, string> = {
   UNDERGRADUATE: 'Undergraduate',
@@ -305,13 +307,21 @@ const StudentPortalService = {
       advisorNameOf(student),
       ConversationsRepo.findCurrentConversation(studentId),
     ])
+    const last = messages.at(-1)
     return {
       messages: messages.map(toChatMessage(advisorName)),
       advisorHandling: current?.mode === ConversationMode.HUMAN_ADVISOR,
+      // The AI owes a reply: it's AI-handled and the student spoke last, recently. The web shows
+      // a typing indicator and polls faster until the queued reply lands.
+      awaitingReply:
+        current?.mode === ConversationMode.AI_BOT &&
+        last?.sender_type === MessageSenderType.STUDENT &&
+        Date.now() - last.created_at.getTime() < AWAITING_REPLY_WINDOW_MS,
     }
   },
 
-  // Returns the student's saved message, plus the AI reply unless an advisor has taken over.
+  // Saves the student's message and returns it at once; the AI reply (if the AI is handling
+  // the chat) is queued and shows up on a later GET /messages.
   SendMessage: async (studentId: string, content: string): Promise<{ messages: PortalChatMessage[] }> => {
     const student = await loadStudent(studentId)
     // After a resolve there's no open thread; start one, as Telegram does.
@@ -319,7 +329,7 @@ const StudentPortalService = {
       (await ConversationsRepo.findCurrentConversation(studentId)) ??
       (await ContactsRepo.createStudentConversation(studentId))
 
-    const { message, reply } = await StudentMessageService.Receive({
+    const { message } = await StudentMessageService.Receive({
       conversationId: conversation.id,
       studentId,
       text: content,
@@ -342,7 +352,7 @@ const StudentPortalService = {
     })
 
     const advisorName = await advisorNameOf(student)
-    return { messages: [message, ...(reply ? [reply] : [])].map(toChatMessage(advisorName)) }
+    return { messages: [message].map(toChatMessage(advisorName)) }
   },
 }
 

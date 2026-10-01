@@ -4,8 +4,9 @@ import env from './config/env'
 import { logger } from './config/logger'
 import prisma from './database/prisma'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
-import { telegramInboundQueue, telegramOutboundQueue } from './jobs/queues.js'
+import { aiReplyQueue, telegramInboundQueue, telegramOutboundQueue } from './jobs/queues.js'
 // Importing the workers starts them.
+import { aiReplyWorker } from './jobs/workers/ai-reply.worker.js'
 import { telegramInboundWorker } from './jobs/workers/telegram-inbound.worker.js'
 import { telegramOutboundWorker } from './jobs/workers/telegram-outbound.worker.js'
 import { createShutdown } from './shutdown'
@@ -32,6 +33,10 @@ const shutdown = createShutdown({
       name: 'telegram-outbound-worker',
       close: () => telegramOutboundWorker.close(),
     },
+    {
+      name: 'ai-reply-worker',
+      close: () => aiReplyWorker.close(),
+    },
   ],
   queues: [
     {
@@ -41,6 +46,10 @@ const shutdown = createShutdown({
     {
       name: 'telegram-outbound-queue',
       close: () => telegramOutboundQueue.close(),
+    },
+    {
+      name: 'ai-reply-queue',
+      close: () => aiReplyQueue.close(),
     },
   ],
   prisma,

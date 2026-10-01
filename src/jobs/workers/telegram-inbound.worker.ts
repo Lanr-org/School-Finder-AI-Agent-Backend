@@ -83,17 +83,15 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     }
 
 
-    // 4. Save free-text messages and answer with the AI unless an advisor has taken over.
+    // 4. Save free-text messages. Unless an advisor has taken over, the AI reply is queued
+    // and sent to this chat by the ai-reply worker.
     if (messageDTO.textContent) {
-      const { reply } = await StudentMessageService.Receive({
+      await StudentMessageService.Receive({
         conversationId: studentContext.conversationId,
         studentId: studentContext.studentId,
         text: messageDTO.textContent,
         channel: MessageChannel.TELEGRAM,
       })
-      if (reply) {
-        await TelegramOutboundService.sendMessage(messageDTO.externalChatId, reply.content)
-      }
     }
 
     // 5. Broadcast live event via Centrifugo to admin dashboard

@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  AI_FALLBACK_REPLY,
-  StudentMessageService,
-} from '../src/modules/conversations/studentMessage.service'
+import { StudentMessageService } from '../src/modules/conversations/studentMessage.service'
 import { ConversationsRepo } from '../src/modules/conversations/conversations.repository'
-import { AIReplyService } from '../src/modules/ai/ai-reply.service'
+import { aiReplyQueue } from '../src/jobs/queues'
 
 vi.mock('../src/modules/conversations/conversations.repository', () => ({
   ConversationsRepo: {
@@ -13,14 +10,12 @@ vi.mock('../src/modules/conversations/conversations.repository', () => ({
   },
 }))
 
-vi.mock('../src/modules/ai/ai-reply.service', () => ({
-  AIReplyService: {
-    GenerateReply: vi.fn(),
-  },
+vi.mock('../src/jobs/queues', () => ({
+  aiReplyQueue: { add: vi.fn() },
 }))
 
 const conversationsRepoMock = vi.mocked(ConversationsRepo)
-const aiReplyMock = vi.mocked(AIReplyService)
+const queueMock = vi.mocked(aiReplyQueue)
 
 const input = {
   conversationId: 'conv-1',
@@ -30,17 +25,17 @@ const input = {
 }
 
 const studentMessage = { id: 'msg-1', sender_type: 'STUDENT', channel: 'WEB' }
-const aiReply = { id: 'msg-2', sender_type: 'AGENT', channel: 'WEB' }
 
 describe('StudentMessageService.Receive', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    conversationsRepoMock.createMessage.mockResolvedValue(studentMessage as any)
+    conversationsRepoMock.createMessage.mockResolvedValue(
+      studentMessage as never,
+    )
   })
 
-  it('saves the student message and returns the AI reply while the AI handles the conversation', async () => {
+  it('saves the student message and queues the AI reply (without calling the AI)', async () => {
     conversationsRepoMock.findConversationMode.mockResolvedValue('AI_BOT')
-    aiReplyMock.GenerateReply.mockResolvedValue(aiReply as any)
 
     const result = await StudentMessageService.Receive(input)
 
@@ -50,42 +45,37 @@ describe('StudentMessageService.Receive', () => {
       'Which schools fit me?',
       'WEB',
     )
-    expect(aiReplyMock.GenerateReply).toHaveBeenCalledWith('conv-1', 'student-1', 'WEB')
-    expect(result).toEqual({ message: studentMessage, reply: aiReply })
+    // Keyed by message id, so one message is never answered twice.
+    expect(queueMock.add).toHaveBeenCalledWith(
+      'reply',
+      {
+        conversationId: 'conv-1',
+        studentId: 'student-1',
+        messageId: 'msg-1',
+        channel: 'WEB',
+      },
+      { jobId: 'ai_msg-1' },
+    )
+    expect(result).toEqual({ message: studentMessage, replyQueued: true })
   })
 
-  it('still saves the student message once an advisor has taken over, without an AI reply', async () => {
-    conversationsRepoMock.findConversationMode.mockResolvedValue('HUMAN_ADVISOR')
+  it('still saves the student message once an advisor has taken over, without queuing a reply', async () => {
+    conversationsRepoMock.findConversationMode.mockResolvedValue(
+      'HUMAN_ADVISOR',
+    )
 
-    const result = await StudentMessageService.Receive({ ...input, channel: 'TELEGRAM' })
+    const result = await StudentMessageService.Receive({
+      ...input,
+      channel: 'TELEGRAM',
+    })
 
-    expect(conversationsRepoMock.createMessage).toHaveBeenCalledTimes(1)
     expect(conversationsRepoMock.createMessage).toHaveBeenCalledWith(
       'conv-1',
       'STUDENT',
       'Which schools fit me?',
       'TELEGRAM',
     )
-    expect(aiReplyMock.GenerateReply).not.toHaveBeenCalled()
-    expect(result).toEqual({ message: studentMessage, reply: null })
-  })
-
-  it('saves and returns the fallback reply when the AI fails', async () => {
-    conversationsRepoMock.findConversationMode.mockResolvedValue('AI_BOT')
-    aiReplyMock.GenerateReply.mockRejectedValue(new Error('LLM timeout'))
-    const fallback = { id: 'msg-3', sender_type: 'AGENT', content: AI_FALLBACK_REPLY }
-    conversationsRepoMock.createMessage
-      .mockResolvedValueOnce(studentMessage as any)
-      .mockResolvedValueOnce(fallback as any)
-
-    const result = await StudentMessageService.Receive(input)
-
-    expect(conversationsRepoMock.createMessage).toHaveBeenLastCalledWith(
-      'conv-1',
-      'AGENT',
-      AI_FALLBACK_REPLY,
-      'WEB',
-    )
-    expect(result).toEqual({ message: studentMessage, reply: fallback })
+    expect(queueMock.add).not.toHaveBeenCalled()
+    expect(result).toEqual({ message: studentMessage, replyQueued: false })
   })
 })

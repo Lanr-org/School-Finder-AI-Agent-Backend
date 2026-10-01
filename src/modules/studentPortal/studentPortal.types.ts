@@ -132,6 +132,8 @@ export type PortalChat = {
   messages: PortalChatMessage[]
   // true once an advisor has taken over: the AI stops replying until it's handed back.
   advisorHandling: boolean
+  // true while a queued AI reply is on its way (show "typing", poll faster).
+  awaitingReply: boolean
 }
 
 export type UpdateProfileDTO = {

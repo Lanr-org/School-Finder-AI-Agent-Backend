@@ -112,6 +112,25 @@ export class ConversationsRepo {
     return identity?.subject ?? null
   }
 
+  // True when the student wrote again after this message (its reply job can then be skipped:
+  // the newer message's job answers everything at once).
+  static hasNewerStudentMessage = async (conversationId: string, messageId: string) => {
+    const message = await prisma.conversationMessages.findUnique({
+      where: { id: messageId },
+      select: { created_at: true },
+    })
+    if (!message) return false
+    const newer = await prisma.conversationMessages.findFirst({
+      where: {
+        conversation_id: conversationId,
+        sender_type: MessageSenderType.STUDENT,
+        created_at: { gt: message.created_at },
+      },
+      select: { id: true },
+    })
+    return newer !== null
+  }
+
   static findLastSenderType = async (conversationId: string) => {
     const message = await prisma.conversationMessages.findFirst({
       where: { conversation_id: conversationId },
