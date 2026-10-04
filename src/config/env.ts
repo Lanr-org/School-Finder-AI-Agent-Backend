@@ -59,6 +59,11 @@ const envSchema = z.object({
   // Redis / Queue
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
 
+  // AI usage limits (replies per UTC day, Telegram messages per minute per chat)
+  AI_DAILY_REPLIES_PER_STUDENT: z.coerce.number().int().positive().default(40),
+  AI_DAILY_REPLIES_GLOBAL: z.coerce.number().int().positive().default(1500),
+  TELEGRAM_MESSAGES_PER_MINUTE: z.coerce.number().int().positive().default(20),
+
   // Student sign-in
   GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
   // Separate from JWT_SECRET so a student token can never pass staff verification.
@@ -113,6 +118,10 @@ export const env = {
   centrifugoHMACSecret: parsed.data.CENTRIFUGO_HMAC_SECRET,
 
   redisUrl: parsed.data.REDIS_URL,
+
+  aiDailyRepliesPerStudent: parsed.data.AI_DAILY_REPLIES_PER_STUDENT,
+  aiDailyRepliesGlobal: parsed.data.AI_DAILY_REPLIES_GLOBAL,
+  telegramMessagesPerMinute: parsed.data.TELEGRAM_MESSAGES_PER_MINUTE,
 
   googleClientId: parsed.data.GOOGLE_CLIENT_ID,
   studentJwtSecret: parsed.data.STUDENT_JWT_SECRET,

@@ -3,6 +3,7 @@ import http from 'http'
 import env from './config/env'
 import { logger } from './config/logger'
 import prisma from './database/prisma'
+import { closeRedis } from './database/redis.js'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
 import { aiReplyQueue, telegramInboundQueue, telegramOutboundQueue } from './jobs/queues.js'
 // Importing the workers starts them.
@@ -50,6 +51,10 @@ const shutdown = createShutdown({
     {
       name: 'ai-reply-queue',
       close: () => aiReplyQueue.close(),
+    },
+    {
+      name: 'redis-client',
+      close: () => closeRedis(),
     },
   ],
   prisma,

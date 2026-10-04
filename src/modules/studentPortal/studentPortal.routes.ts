@@ -64,7 +64,7 @@ studentPortalRouter.delete(
   StudentPortalController.RevokeStudyPlanLinks,
 )
 
-// Keyed by student, not IP: each message can cost an AI call. The real cost cap is Stage 7.
+// Keyed by student, not IP: each message can cost an AI call. The daily reply caps live in AiUsageService (checked in processAiReply).
 // Runs after StudentAuthenticateMiddleware, so req.student is always set here.
 const messageRateLimit = createRateLimit(20, 1, (req) => `student:${req.student?.studentId ?? 'none'}`)
 

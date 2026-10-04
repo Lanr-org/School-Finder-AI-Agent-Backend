@@ -12,6 +12,7 @@ import { CentrifugoClient } from '../../integrations/centrifugo/services/centrif
 import { StudentMessageService } from '../../modules/conversations/studentMessage.service.js'
 import { TelegramOutboundService } from '../../integrations/telegram/services/telegram-outbound.service.js'
 import { MessageChannel } from '../../generated/prisma/index.js'
+import { AiUsageService } from '../../modules/ai/aiUsage.service.js'
 
 const parseRedisUrl = (url: string) => {
   const parsed = new URL(url)
@@ -86,6 +87,14 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     // 4. Save free-text messages. Unless an advisor has taken over, the AI reply is queued
     // and sent to this chat by the ai-reply worker.
     if (messageDTO.textContent) {
+      // A chat sending more than the per-minute allowance is dropped without a reply.
+      if (!(await AiUsageService.ConsumeTelegramMessage(messageDTO.externalChatId))) {
+        logger.warn(
+          { updateId: update.update_id, chatId: messageDTO.externalChatId },
+          'Telegram message dropped: per-minute limit exceeded.'
+        )
+        return
+      }
       await StudentMessageService.Receive({
         conversationId: studentContext.conversationId,
         studentId: studentContext.studentId,
