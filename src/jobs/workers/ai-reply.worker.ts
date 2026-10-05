@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq'
 import env from '../../config/env.js'
 import { logger } from '../../config/logger.js'
+import { captureWorkerFailure } from '../../config/sentry.js'
 import { processAiReply } from '../../modules/ai/ai-reply.job.js'
 import type { AiReplyJob } from '../queues.js'
 
@@ -33,4 +34,5 @@ export const aiReplyWorker = new Worker<AiReplyJob>(
 
 aiReplyWorker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, error: err.message }, 'AI reply job failed.')
+  captureWorkerFailure('ai-reply', job, err)
 })

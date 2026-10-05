@@ -1,6 +1,7 @@
 import { Worker, Job } from 'bullmq'
 import env from '../../config/env.js'
 import { logger } from '../../config/logger.js'
+import { captureWorkerFailure } from '../../config/sentry.js'
 import { TelegramWebhookUpdate } from '../../integrations/telegram/schemas/telegram-webhook.schema.js'
 import { TelegramUserMapper } from '../../integrations/telegram/mappers/telegram-user.mapper.js'
 import { TelegramMessageMapper } from '../../integrations/telegram/mappers/telegram-message.mapper.js'
@@ -146,4 +147,5 @@ telegramInboundWorker.on('completed', (job) => {
 
 telegramInboundWorker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, error: err.message }, 'Inbound Telegram update processing failed.')
+  captureWorkerFailure('telegram-inbound', job, err)
 })

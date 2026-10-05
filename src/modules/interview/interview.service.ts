@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod'
 import { createError } from '../../common/errors/AppError.js'
 import { logger } from '../../config/logger.js'
+import { captureError } from '../../config/sentry.js'
 import { llmClient } from '../../integrations/llm/index.js'
 import type { LLMMessage } from '../../integrations/llm/index.js'
 import type { InterviewType, MessageChannel } from '../../generated/prisma/index.js'
@@ -84,12 +85,16 @@ const askModel = async <T>(
     raw = await llmClient.generateReply(messages, systemPrompt)
   } catch (error) {
     logger.warn({ err: error }, 'Interview LLM call failed.')
-    throw createError(TRY_AGAIN, 500, {}, 'INTERNAL_ERROR')
+    // The root cause goes to Sentry here; the wrapper below is marked so the error
+    // handler doesn't report it again.
+    captureError(error, { tags: { area: 'interview' } })
+    throw Object.assign(createError(TRY_AGAIN, 500, {}, 'INTERNAL_ERROR'), { reported: true })
   }
   const parsed = parseModelJson(raw, schema)
   if (!parsed) {
     logger.warn('Interview LLM reply was not valid JSON for the expected shape.')
-    throw createError(TRY_AGAIN, 500, {}, 'INTERNAL_ERROR')
+    captureError(new Error('Interview LLM reply was not valid JSON'), { tags: { area: 'interview' } })
+    throw Object.assign(createError(TRY_AGAIN, 500, {}, 'INTERNAL_ERROR'), { reported: true })
   }
   return parsed
 }

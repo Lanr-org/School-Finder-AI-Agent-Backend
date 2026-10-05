@@ -1,4 +1,5 @@
 import { logger } from '../../config/logger.js'
+import { captureAlert, captureError } from '../../config/sentry.js'
 import {
   ConversationMode,
   MessageSenderType,
@@ -55,6 +56,11 @@ export const processAiReply = async ({
       { conversationId, studentId, reason: usage.reason },
       'AI reply skipped: daily limit reached.',
     )
+    // The cost cap was reached for the whole platform: someone should know (one Sentry
+    // issue per day's worth, not one per message).
+    if (usage.reason === 'GLOBAL_DAILY') {
+      captureAlert('AI global daily reply cap reached', 'ai-global-daily-cap')
+    }
     // Saved so the student (and staff) see why there was no answer.
     outcome = 'SKIPPED_LIMIT'
     content = (
@@ -77,6 +83,8 @@ export const processAiReply = async ({
         { err: error, conversationId },
         'AI reply generation failed.',
       )
+      // Every configured provider failed (the fallback chain is inside llmClient).
+      captureError(error, { tags: { area: 'ai-reply' }, extra: { conversationId } })
       // Saved so staff can see the student got an error instead of an answer.
       outcome = 'FALLBACK'
       content = (

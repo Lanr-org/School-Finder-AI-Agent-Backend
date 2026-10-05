@@ -66,6 +66,11 @@ const envSchema = z.object({
   // Mock interviews a student can start per UTC day (each costs ~6 AI calls).
   INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY: z.coerce.number().int().positive().default(3),
 
+  // Error monitoring: off when SENTRY_DSN is unset (local dev and tests).
+  SENTRY_DSN: z.string().url().optional().or(z.literal('').transform(() => undefined)),
+  // Defaults to NODE_ENV; set it to tell staging and production apart.
+  SENTRY_ENVIRONMENT: z.string().optional(),
+
   // Student sign-in
   GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
   // Separate from JWT_SECRET so a student token can never pass staff verification.
@@ -125,6 +130,9 @@ export const env = {
   aiDailyRepliesGlobal: parsed.data.AI_DAILY_REPLIES_GLOBAL,
   telegramMessagesPerMinute: parsed.data.TELEGRAM_MESSAGES_PER_MINUTE,
   interviewSessionsPerStudentPerDay: parsed.data.INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY,
+
+  sentryDsn: parsed.data.SENTRY_DSN,
+  sentryEnvironment: parsed.data.SENTRY_ENVIRONMENT,
 
   googleClientId: parsed.data.GOOGLE_CLIENT_ID,
   studentJwtSecret: parsed.data.STUDENT_JWT_SECRET,

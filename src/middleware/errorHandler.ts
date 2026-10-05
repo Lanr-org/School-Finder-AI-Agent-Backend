@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import type { AppError } from '../common/errors/AppError'
 import env from '../config/env'
 import { logger } from '../config/logger'
+import { captureError } from '../config/sentry'
 
 export const errorHandler = (
   err: AppError,
@@ -21,6 +22,13 @@ export const errorHandler = (
 
   if (statusCode >= 500) {
     logger.error({ err, requestId: req.id, code }, 'Unhandled request error')
+    // Only server errors: 4xx are the client's mistakes, not ours to chase.
+    if (!err.reported) {
+      const routePath = (req.route as { path?: string } | undefined)?.path
+      captureError(err, {
+        tags: { requestId, code, route: `${req.method} ${routePath ?? 'unmatched'}` },
+      })
+    }
   }
 
   let errDetails: {

@@ -1,7 +1,10 @@
+// Must stay first: starts Sentry before the rest of the app loads.
+import './config/instrument'
 import app from './app'
 import http from 'http'
 import env from './config/env'
 import { logger } from './config/logger'
+import { flushSentry } from './config/sentry'
 import prisma from './database/prisma'
 import { closeRedis } from './database/redis.js'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
@@ -55,6 +58,11 @@ const shutdown = createShutdown({
     {
       name: 'redis-client',
       close: () => closeRedis(),
+    },
+    // Last, so errors raised while shutting down still get sent.
+    {
+      name: 'sentry',
+      close: () => flushSentry(),
     },
   ],
   prisma,
