@@ -13,6 +13,7 @@ import { StudentMessageService } from '../../modules/conversations/studentMessag
 import { TelegramOutboundService } from '../../integrations/telegram/services/telegram-outbound.service.js'
 import { MessageChannel } from '../../generated/prisma/index.js'
 import { AiUsageService } from '../../modules/ai/aiUsage.service.js'
+import { TelegramInterviewHandler } from '../../integrations/telegram/handlers/interview.handler.js'
 
 const parseRedisUrl = (url: string) => {
   const parsed = new URL(url)
@@ -93,6 +94,17 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
           { updateId: update.update_id, chatId: messageDTO.externalChatId },
           'Telegram message dropped: per-minute limit exceeded.'
         )
+        return
+      }
+      // During a practice interview the text is the answer: it's graded and answered here,
+      // not saved to the conversation or sent to the normal AI chat.
+      if (
+        await TelegramInterviewHandler.handleText(
+          messageDTO.externalChatId,
+          studentContext.studentId,
+          messageDTO.textContent
+        )
+      ) {
         return
       }
       await StudentMessageService.Receive({

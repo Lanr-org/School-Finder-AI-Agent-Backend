@@ -2,7 +2,8 @@ import { InlineKeyboard } from 'grammy'
 import { logger } from '../../../config/logger.js'
 import { TelegramOutboundService } from '../services/telegram-outbound.service.js'
 import { StudentsService } from '../../../modules/students/students.service.js'
-import { IntakeMonth } from '../../../generated/prisma/index.js'
+import { IntakeMonth, InterviewType } from '../../../generated/prisma/index.js'
+import { TelegramInterviewHandler } from './interview.handler.js'
 
 export interface ParsedCallbackQuery {
   action: string
@@ -124,6 +125,11 @@ export class TelegramCallbackQueryHandler {
           chatId,
           '🎉 Preference registration complete!\n\nYour profile has been updated in our system. You can now ask me any question about tuition fees, admission requirements, or specific universities!\n\nSend /plan to see your matches on the web.'
         )
+        return true
+
+      case 'INTERVIEW_TYPE':
+        if (!studentId || !(parsed.value in InterviewType)) return false
+        await TelegramInterviewHandler.start(chatId, studentId, parsed.value as InterviewType)
         return true
 
       default:

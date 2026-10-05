@@ -5,6 +5,7 @@ import { AdvisorRequestService } from '../../../modules/conversations/advisorReq
 import StudentLinkService from '../../../modules/studentLink/studentLink.service.js'
 import type { LinkOutcome } from '../../../modules/studentLink/studentLink.types.js'
 import { TelegramOutboundService } from '../services/telegram-outbound.service.js'
+import { TelegramInterviewHandler } from './interview.handler.js'
 
 
 export interface ParsedCommand {
@@ -109,10 +110,18 @@ export class TelegramCommandHandler {
         return true
       }
 
+      case 'interview':
+        await TelegramInterviewHandler.promptType(chatId, studentId)
+        return true
+
+      case 'stop':
+        await TelegramInterviewHandler.stop(chatId, studentId)
+        return true
+
       case 'help':
         await TelegramOutboundService.sendMessage(
           chatId,
-          'Here is how you can use Smetase:\n\n• Type your questions about studying abroad.\n• /plan to open your plan on the web.\n• /advisor to talk to a real advisor.\n• /start to restart onboarding.'
+          'Here is how you can use Smetase:\n\n• Type your questions about studying abroad.\n• /plan to open your plan on the web.\n• /interview to practise a visa or admission interview.\n• /advisor to talk to a real advisor.\n• /start to restart onboarding.'
         )
         return true
 

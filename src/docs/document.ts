@@ -26,6 +26,7 @@ import {
 } from '../modules/studentPortal/studentPortal.docs'
 import { registerStudyPlanLinkDocs } from '../modules/studyPlanLinks/studyPlanLinks.docs'
 import { registerStudentLinkDocs } from '../modules/studentLink/studentLink.docs'
+import { registerInterviewDocs } from '../modules/interview/interview.docs'
 
 // Every feature documents its own routes in src/modules/<feature>/<feature>.docs.ts.
 // Order is fixed here; features that share a registered component receive it
@@ -61,6 +62,7 @@ registerStaffJourneyDocs(registry, {
   journeySchema,
 })
 registerStudentLinkDocs(registry)
+registerInterviewDocs(registry)
 registerStudyPlanLinkDocs(registry, { programmeMatchSchema, money })
 registerHealthDocs(registry)
 registerTelegramDocs(registry)

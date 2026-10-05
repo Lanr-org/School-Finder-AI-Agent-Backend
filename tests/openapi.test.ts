@@ -24,6 +24,7 @@ import { notificationsRouter } from '../src/modules/notifications/notifications.
 import { studentRouter } from '../src/modules/studentAuth/studentAuth.routes'
 import { studentPortalRouter } from '../src/modules/studentPortal/studentPortal.routes'
 import { studentLinkRouter } from '../src/modules/studentLink/studentLink.routes'
+import { interviewRouter } from '../src/modules/interview/interview.routes'
 import { publicStudyPlanRouter } from '../src/modules/studyPlanLinks/studyPlanLinks.routes'
 import { healthRouter } from '../src/modules/health/health.routes'
 import telegramWebhookRouter from '../src/integrations/telegram/routes/telegram.routes'
@@ -51,6 +52,7 @@ const MOUNTS: [prefix: string, router: Router][] = [
   ['/api/v1/student', studentRouter],
   ['/api/v1/student', studentPortalRouter],
   ['/api/v1/student', studentLinkRouter],
+  ['/api/v1/student', interviewRouter],
   ['/api/v1/public', publicStudyPlanRouter],
   ['/api/v1/webhooks', telegramWebhookRouter],
 ]

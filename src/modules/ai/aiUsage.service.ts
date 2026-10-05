@@ -45,6 +45,43 @@ export class AiUsageService {
     }
   }
 
+  // One AI call against the global daily cap only (interview calls don't use up the
+  // student's chat replies). Pair with TryConsumeInterviewSession for the per-student limit.
+  static async TryConsumeGlobal(): Promise<AiUsageDecision> {
+    try {
+      const redis = getRedis()
+      const globalKey = `ai:daily:global:${utcDay()}`
+      const count = await redis.incr(globalKey)
+      if (count === 1) await redis.expire(globalKey, DAY_KEY_TTL_SECONDS)
+      if (count > env.aiDailyRepliesGlobal) {
+        await redis.decr(globalKey)
+        return { allowed: false, reason: 'GLOBAL_DAILY' }
+      }
+      return { allowed: true }
+    } catch (error) {
+      logger.warn({ err: error }, 'AI usage check failed; allowing the call.')
+      return { allowed: true }
+    }
+  }
+
+  // Starting a mock interview, limited per student per UTC day.
+  static async TryConsumeInterviewSession(studentId: string): Promise<AiUsageDecision> {
+    try {
+      const redis = getRedis()
+      const key = `ai:interview:student:${studentId}:${utcDay()}`
+      const count = await redis.incr(key)
+      if (count === 1) await redis.expire(key, DAY_KEY_TTL_SECONDS)
+      if (count > env.interviewSessionsPerStudentPerDay) {
+        await redis.decr(key)
+        return { allowed: false, reason: 'STUDENT_DAILY' }
+      }
+      return { allowed: true }
+    } catch (error) {
+      logger.warn({ err: error }, 'Interview limit check failed; allowing.')
+      return { allowed: true }
+    }
+  }
+
   // True when this Telegram chat is within its per-minute allowance.
   static async ConsumeTelegramMessage(chatId: string): Promise<boolean> {
     try {

@@ -31,6 +31,7 @@ import { dashboardRouter } from './modules/dashboard/dashboard.routes'
 import { studentRouter } from './modules/studentAuth/studentAuth.routes'
 import { studentPortalRouter } from './modules/studentPortal/studentPortal.routes'
 import { studentLinkRouter } from './modules/studentLink/studentLink.routes'
+import { interviewRouter } from './modules/interview/interview.routes'
 import { publicStudyPlanRouter } from './modules/studyPlanLinks/studyPlanLinks.routes'
 import telegramWebhookRouter from './integrations/telegram/routes/telegram.routes'
 
@@ -77,6 +78,7 @@ app.use(`${version}/dashboard`, dashboardRouter)
 app.use(`${version}/student`, studentRouter)
 app.use(`${version}/student`, studentPortalRouter)
 app.use(`${version}/student`, studentLinkRouter)
+app.use(`${version}/student`, interviewRouter)
 // No sign-in: read-only Study Plan links a student shares with parents and sponsors.
 app.use(`${version}/public`, publicStudyPlanRouter)
 

@@ -63,6 +63,8 @@ const envSchema = z.object({
   AI_DAILY_REPLIES_PER_STUDENT: z.coerce.number().int().positive().default(40),
   AI_DAILY_REPLIES_GLOBAL: z.coerce.number().int().positive().default(1500),
   TELEGRAM_MESSAGES_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  // Mock interviews a student can start per UTC day (each costs ~6 AI calls).
+  INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY: z.coerce.number().int().positive().default(3),
 
   // Student sign-in
   GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
@@ -122,6 +124,7 @@ export const env = {
   aiDailyRepliesPerStudent: parsed.data.AI_DAILY_REPLIES_PER_STUDENT,
   aiDailyRepliesGlobal: parsed.data.AI_DAILY_REPLIES_GLOBAL,
   telegramMessagesPerMinute: parsed.data.TELEGRAM_MESSAGES_PER_MINUTE,
+  interviewSessionsPerStudentPerDay: parsed.data.INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY,
 
   googleClientId: parsed.data.GOOGLE_CLIENT_ID,
   studentJwtSecret: parsed.data.STUDENT_JWT_SECRET,

@@ -43,16 +43,15 @@ model Users {
   auth_sessions         Auth_Sessions[]
   password_reset_tokens Password_Reset_Tokens[]
 
-
   // NEW
   invitations_received Team_Invitations[] @relation("InvitationRecipient")
   invitations_sent     Team_Invitations[] @relation("InvitationSender")
 
-  advisor_profile      AdvisorProfile?
-  authored_notes       StudentNote[]
-  authored_follow_ups  FollowUp[]
-  authored_bulletins   IndustryBulletin[]
-  authored_visa_rates  VisaSuccessRate[]
+  advisor_profile               AdvisorProfile?
+  authored_notes                StudentNote[]
+  authored_follow_ups           FollowUp[]
+  authored_bulletins            IndustryBulletin[]
+  authored_visa_rates           VisaSuccessRate[]
   generated_recommendation_runs RecommendationRun[]
   created_applications          StudentApplication[]
   application_status_changes    ApplicationStatusHistory[]
@@ -101,25 +100,24 @@ model Password_Reset_Tokens {
   @@map("password_reset_tokens")
 }
 
-
 model Team_Invitations {
-  id                  String    @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  user_id             String    @db.Uuid
-  invited_by_user_id  String    @db.Uuid
+  user_id            String @db.Uuid
+  invited_by_user_id String @db.Uuid
 
-  token_hash          String    @unique @db.Char(64)
+  token_hash String @unique @db.Char(64)
 
-  expires_at          DateTime  @db.Timestamptz(6)
-  accepted_at         DateTime?
-  canceled_at         DateTime?
-  
-  sent_at             DateTime  @default(now()) @db.Timestamptz(6)
-  last_sent_at        DateTime  @default(now()) @db.Timestamptz(6)
-  send_count          Int       @default(1)
+  expires_at  DateTime  @db.Timestamptz(6)
+  accepted_at DateTime?
+  canceled_at DateTime?
+
+  sent_at      DateTime @default(now()) @db.Timestamptz(6)
+  last_sent_at DateTime @default(now()) @db.Timestamptz(6)
+  send_count   Int      @default(1)
 
   // The invited user
-  user Users @relation( "InvitationRecipient", fields: [user_id], references: [id], onDelete: Cascade)
+  user Users @relation("InvitationRecipient", fields: [user_id], references: [id], onDelete: Cascade)
 
   // The admin/staff who sent the invitation
   invited_by Users @relation("InvitationSender", fields: [invited_by_user_id], references: [id])
@@ -204,25 +202,25 @@ model Student {
   assigned_advisor_id String?       @db.Uuid
   status              StudentStatus @default(NEW)
 
-  study_level         String?       @db.VarChar(50)
+  study_level         String?      @db.VarChar(50)
   target_destinations String[]
   target_intake_month IntakeMonth?
   target_intake_year  Int?
-  budget_range        String?       @db.VarChar(100)
-  academic_background String?       @db.Text
-  english_test_score  String?       @db.VarChar(100)
+  budget_range        String?      @db.VarChar(100)
+  academic_background String?      @db.Text
+  english_test_score  String?      @db.VarChar(100)
 
   // The one programme the student picked (web app), and the first time they shared their Study Plan.
-  chosen_program_id     String?   @db.Uuid
-  study_plan_shared_at  DateTime? @db.Timestamptz(6)
+  chosen_program_id    String?   @db.Uuid
+  study_plan_shared_at DateTime? @db.Timestamptz(6)
 
-  created_at          DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime      @updatedAt @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
 
-  contact       Contacts        @relation(fields: [contact_id], references: [id], onDelete: Cascade)
-  conversations Conversations[]
-  notes         StudentNote[]
-  follow_ups    FollowUp[]
+  contact              Contacts               @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  conversations        Conversations[]
+  notes                StudentNote[]
+  follow_ups           FollowUp[]
   recommendation_runs  RecommendationRun[]
   shortlisted_programs StudentShortlist[]
   applications         StudentApplication[]
@@ -232,13 +230,68 @@ model Student {
   link_tokens          StudentLinkToken[]
   journey_checks       StudentJourneyCheck[]
   study_plan_links     StudyPlanLink[]
+  interview_sessions   InterviewSession[]
   // SetNull: deleting a programme clears the choice instead of blocking the delete.
-  chosen_program       Programs?      @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
+  chosen_program       Programs?              @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
 
   @@index([assigned_advisor_id])
   @@index([chosen_program_id])
   @@index([status, created_at(sort: Desc)])
   @@map("students")
+}
+
+enum InterviewType {
+  VISA
+  ADMISSION
+}
+
+enum InterviewStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// An AI mock interview. At most one IN_PROGRESS per student (partial unique index in the
+// migration). Country/programme are snapshots taken at start so history stays readable.
+model InterviewSession {
+  id             String          @id @default(uuid()) @db.Uuid
+  student_id     String          @db.Uuid
+  type           InterviewType
+  status         InterviewStatus @default(IN_PROGRESS)
+  channel        MessageChannel
+  target_country String?         @db.VarChar(100)
+  program_label  String?         @db.VarChar(255)
+  question_count Int             @default(5)
+  overall_score  Decimal?        @db.Decimal(5, 2)
+  summary        String?         @db.Text
+  strengths      Json?
+  improvements   Json?
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  completed_at   DateTime?       @db.Timestamptz(6)
+
+  student Student           @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  answers InterviewAnswer[]
+
+  @@index([student_id, status])
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("interview_sessions")
+}
+
+model InterviewAnswer {
+  id            String    @id @default(uuid()) @db.Uuid
+  session_id    String    @db.Uuid
+  idx           Int
+  question      String    @db.Text
+  answer        String?   @db.Text
+  tip           String?   @db.Text
+  sample_answer String?   @db.Text
+  score         Int?
+  answered_at   DateTime? @db.Timestamptz(6)
+
+  session InterviewSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, idx])
+  @@map("interview_answers")
 }
 
 enum StudentIdentityProvider {
@@ -361,7 +414,7 @@ model ConversationMessages {
   conversation_id String            @db.Uuid
   sender_type     MessageSenderType
   channel         MessageChannel // where the message came from (student) or went to (AI/advisor)
-  content        String            @db.Text
+  content         String            @db.Text
   metadata        Json?
   created_at      DateTime          @default(now()) @db.Timestamptz(6)
 
@@ -398,8 +451,8 @@ enum PartnerStatus {
 // ==========================================
 
 model Schools {
-  id         String @id @default(uuid()) @db.Uuid
-  public_id  String @unique @db.VarChar(24)
+  id        String @id @default(uuid()) @db.Uuid
+  public_id String @unique @db.VarChar(24)
 
   // Profile
   name          String             @db.VarChar(200)
@@ -408,23 +461,23 @@ model Schools {
   description   String?            @db.Text
 
   // Contact & website
-  website           String?  @db.VarChar(255)
-  admissions_email  String?  @db.VarChar(255)
-  phone_numbers     String[]
+  website          String?  @db.VarChar(255)
+  admissions_email String?  @db.VarChar(255)
+  phone_numbers    String[]
 
   // Location
-  street_address String?  @db.VarChar(255)
-  city           String   @db.VarChar(120)
-  country        String   @db.VarChar(120)
-  postal_code    String?  @db.VarChar(20)
+  street_address String? @db.VarChar(255)
+  city           String  @db.VarChar(120)
+  country        String  @db.VarChar(120)
+  postal_code    String? @db.VarChar(20)
 
   // Partnership & internal assessment
-  partner_status                PartnerStatus @default(PROSPECT)
-  visa_friendliness_score       Int?
-  visa_friendliness_notes       String?       @db.Text
-  admission_friendliness_score  Int?
-  admission_friendliness_notes  String?       @db.Text
-  ranking_reputation_notes      String?       @db.Text
+  partner_status               PartnerStatus @default(PROSPECT)
+  visa_friendliness_score      Int?
+  visa_friendliness_notes      String?       @db.Text
+  admission_friendliness_score Int?
+  admission_friendliness_notes String?       @db.Text
+  ranking_reputation_notes     String?       @db.Text
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -468,11 +521,11 @@ model Programs {
   public_id String @unique @db.VarChar(24)
 
   // Profile
-  name         String     @db.VarChar(200)
-  study_level  StudyLevel
-  qualification String    @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
-  category     String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
-  duration     String     @db.VarChar(50)  // e.g. "2 years", "18 months"
+  name          String     @db.VarChar(200)
+  study_level   StudyLevel
+  qualification String     @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
+  category      String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
+  duration      String     @db.VarChar(50) // e.g. "2 years", "18 months"
 
   // School link
   school_id String  @db.Uuid
@@ -486,10 +539,10 @@ model Programs {
   // Intakes & deadlines
   intakes ProgramIntakes[]
 
-  recommendations Recommendation[]
-  shortlisted_by  StudentShortlist[]
-  applications    StudentApplication[]
-  chosen_by_students Student[] @relation("StudentChosenProgram")
+  recommendations    Recommendation[]
+  shortlisted_by     StudentShortlist[]
+  applications       StudentApplication[]
+  chosen_by_students Student[]            @relation("StudentChosenProgram")
 
   // Entry requirements
   academic_requirements String? @db.Text
@@ -565,11 +618,11 @@ model AdvisorProfile {
 }
 
 model StudentNote {
-  id         String  @id @default(uuid()) @db.Uuid
-  public_id  String  @unique @db.VarChar(24)
-  student_id String  @db.Uuid
-  advisor_id String  @db.Uuid
-  body       String  @db.Text
+  id         String @id @default(uuid()) @db.Uuid
+  public_id  String @unique @db.VarChar(24)
+  student_id String @db.Uuid
+  advisor_id String @db.Uuid
+  body       String @db.Text
 
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   updated_at DateTime  @updatedAt @db.Timestamptz(6)
@@ -718,8 +771,8 @@ model RecommendationRun {
   generated_by     String   @db.Uuid
   created_at       DateTime @default(now()) @db.Timestamptz(6)
 
-  student     Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  generator   Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
+  student         Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  generator       Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
   recommendations Recommendation[]
 
   @@index([student_id, created_at(sort: Desc)])
@@ -856,6 +909,7 @@ model StudentStatusHistory {
   @@index([student_id, created_at(sort: Desc)])
   @@map("student_status_history")
 }
+
 // ==========================================
 // AUDIT LOGS
 // ==========================================

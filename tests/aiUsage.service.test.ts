@@ -8,6 +8,7 @@ vi.mock('../src/config/env', () => ({
     aiDailyRepliesPerStudent: 2,
     aiDailyRepliesGlobal: 3,
     telegramMessagesPerMinute: 2,
+    interviewSessionsPerStudentPerDay: 2,
   },
 }))
 
@@ -60,6 +61,50 @@ describe('AiUsageService', () => {
       await expect(AiUsageService.TryConsume('s1')).resolves.toEqual({
         allowed: true,
       })
+    })
+  })
+
+  describe('TryConsumeGlobal', () => {
+    it('counts against the global cap only', async () => {
+      redis.incr.mockResolvedValueOnce(1)
+
+      await expect(AiUsageService.TryConsumeGlobal()).resolves.toEqual({ allowed: true })
+      expect(redis.incr).toHaveBeenCalledTimes(1)
+    })
+
+    it('denies over the cap and gives the slot back', async () => {
+      redis.incr.mockResolvedValueOnce(4)
+
+      await expect(AiUsageService.TryConsumeGlobal()).resolves.toEqual({
+        allowed: false,
+        reason: 'GLOBAL_DAILY',
+      })
+      expect(redis.decr).toHaveBeenCalledTimes(1)
+    })
+
+    it('fails open when Redis errors', async () => {
+      redis.incr.mockRejectedValue(new Error('redis down'))
+
+      await expect(AiUsageService.TryConsumeGlobal()).resolves.toEqual({ allowed: true })
+    })
+  })
+
+  describe('TryConsumeInterviewSession', () => {
+    it('allows up to the daily session limit, then denies', async () => {
+      redis.incr.mockResolvedValueOnce(2).mockResolvedValueOnce(3)
+
+      await expect(AiUsageService.TryConsumeInterviewSession('s1')).resolves.toEqual({ allowed: true })
+      await expect(AiUsageService.TryConsumeInterviewSession('s1')).resolves.toEqual({
+        allowed: false,
+        reason: 'STUDENT_DAILY',
+      })
+      expect(redis.decr).toHaveBeenCalledTimes(1)
+    })
+
+    it('fails open when Redis errors', async () => {
+      redis.incr.mockRejectedValue(new Error('redis down'))
+
+      await expect(AiUsageService.TryConsumeInterviewSession('s1')).resolves.toEqual({ allowed: true })
     })
   })
 
