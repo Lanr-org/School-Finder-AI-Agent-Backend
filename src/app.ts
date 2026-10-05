@@ -37,6 +37,10 @@ import telegramWebhookRouter from './integrations/telegram/routes/telegram.route
 
 const app: Express = express()
 
+// Behind a load balancer (Render) the client IP is in X-Forwarded-For; trust that many hops
+// so per-IP rate limits and logs see the real client, not the proxy.
+if (env.trustProxy > 0) app.set('trust proxy', env.trustProxy)
+
 app.use(requestId)
 app.use(httpLogger)
 

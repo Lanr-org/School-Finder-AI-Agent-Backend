@@ -12,8 +12,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   COOKIE_SECRET: z.string().min(1, 'COOKIE_SECRET is required'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
-  DOCS_ENABLED: z.stringbool().default(true),
+  // Swagger UI and /openapi.json. When unset: on in development, off in production.
+  DOCS_ENABLED: z.stringbool().optional(),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  // How many reverse proxies sit in front of the API (Render: 1). Without this every client
+  // looks like the proxy's IP, so all students would share one rate-limit bucket.
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
 
   // Email (Optional in dev)
   SMTP_HOST: z.string().optional(),
@@ -79,6 +83,19 @@ const envSchema = z.object({
 }).refine((vars) => vars.STUDENT_JWT_SECRET !== vars.JWT_SECRET, {
   message: 'STUDENT_JWT_SECRET must be different from JWT_SECRET',
   path: ['STUDENT_JWT_SECRET'],
+}).superRefine((vars, ctx) => {
+  // Production only: fail at startup rather than run with weak secrets or insecure origins.
+  if (vars.NODE_ENV !== 'production') return
+  for (const key of ['JWT_SECRET', 'COOKIE_SECRET'] as const) {
+    if (vars[key].length < 32) {
+      ctx.addIssue({ code: 'custom', path: [key], message: `${key} must be at least 32 characters in production` })
+    }
+  }
+  for (const key of ['FRONTEND_URL', 'STUDENT_APP_URL'] as const) {
+    if (!vars[key].startsWith('https://')) {
+      ctx.addIssue({ code: 'custom', path: [key], message: `${key} must be an https:// URL in production` })
+    }
+  }
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -95,8 +112,9 @@ export const env = {
   databaseUrl: parsed.data.DATABASE_URL,
   cookieSecret: parsed.data.COOKIE_SECRET,
   jwtSecret: parsed.data.JWT_SECRET,
-  docsEnabled: parsed.data.DOCS_ENABLED,
+  docsEnabled: parsed.data.DOCS_ENABLED ?? parsed.data.NODE_ENV !== 'production',
   frontendUrl: parsed.data.FRONTEND_URL,
+  trustProxy: parsed.data.TRUST_PROXY,
 
   smtpHost: parsed.data.SMTP_HOST,
   smtpPort: parsed.data.SMTP_PORT,

@@ -1,0 +1,6 @@
+{
+  // What the production image compiles: the server and the one-off admin bootstrap, no tests.
+  "extends": "./tsconfig.json",
+  "include": ["src", "scripts/bootstrap-admin.ts"],
+  "exclude": ["node_modules", "dist", "tests"]
+}
