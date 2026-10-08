@@ -1,0 +1,136 @@
+# Render Blueprint for Smetase (soft launch). See DEPLOY.md for the step-by-step.
+#
+# DRAFT: domain is smetase.com (DNS on Cloudflare). Plan names and field names were written from
+# Render's Blueprint spec but not validated against Render (no CLI here); the dashboard reports
+# any mistake when you create the Blueprint, and each is a one-line fix.
+#
+# What it creates: the API (one process: web server + queue workers), PostgreSQL, Key Value
+# (Redis), and two static sites. Everything sits in one region so the API reaches the database
+# and Redis over Render's private network.
+#
+# Not included on purpose: Centrifugo. The staff app polls for notifications and nothing
+# subscribes to Centrifugo; the API skips publishing when CENTRIFUGO_API_KEY is unset.
+
+databases:
+  - name: smetase-db
+    region: frankfurt
+    plan: basic-256mb # check the current plan names in the dashboard; paid plans keep daily backups
+    databaseName: smetase
+    user: smetase
+    postgresMajorVersion: "16"
+
+keyvalue:
+  - name: smetase-redis
+    region: frankfurt
+    plan: starter # the free tier does not persist data, so queued jobs would be lost on restart
+    # BullMQ stores its queues here; the default eviction policy could delete them under memory pressure.
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # private network only
+
+services:
+  # ---- API + workers ----
+  - type: web
+    name: smetase-api
+    runtime: docker
+    region: frankfurt
+    plan: starter # must stay on (not free): the queue workers run in this process
+    numInstances: 1 # one process for soft launch; the daily AI counters and workers assume it
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    branch: main
+    autoDeployTrigger: "off" # deploy by hand until we trust the pipeline
+    healthCheckPath: /health/ready
+    # Migrations run once per deploy, before the new version starts. Never on boot.
+    preDeployCommand: npx prisma migrate deploy
+    domains:
+      - api.smetase.com
+    envVars:
+      # Runtime
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: TRUST_PROXY
+        value: "1" # Render's load balancer; without it every client shares one rate-limit bucket
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: SENTRY_DSN
+        sync: false
+
+      # Data (private network connection strings, filled in by Render)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smetase-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: smetase-redis
+          property: connectionString
+
+      # Where the two apps live. Must be https:// in production (the API refuses to start otherwise).
+      - key: FRONTEND_URL
+        value: https://hub.smetase.com
+      - key: STUDENT_APP_URL
+        value: https://app.smetase.com
+
+      # Secrets generated once by Render (32+ random characters, all different from each other)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: STUDENT_JWT_SECRET
+        generateValue: true
+
+      # Google sign-in (the client ID is public; the client secret is never used)
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+      # Email (invitations and password resets)
+      - key: EMAIL_FROM
+        value: Smetase <no-reply@smetase.com>
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+
+      # Telegram. The webhook secret must be 1-256 characters of A-Z a-z 0-9 _ -
+      # (so not Render's generated base64, which can contain + / =). Make one with `openssl rand -hex 32`.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        value: https://api.smetase.com/api/v1/webhooks/telegram
+
+      # AI. Anthropic only at launch. To add fallbacks, also set OPENAI_API_KEY and/or
+      # GEMINI_API_KEY in the dashboard and change LLM_FALLBACK_PROVIDERS (e.g. openai,gemini).
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_FALLBACK_PROVIDERS
+        value: none
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-opus-5-5
+
+      # Spending limits (also set a monthly limit in the Anthropic console as the hard ceiling)
+      - key: AI_DAILY_REPLIES_PER_STUDENT
+        value: "40"
+      - key: AI_DAILY_REPLIES_GLOBAL
+        value: "1500"
+      - key: TELEGRAM_MESSAGES_PER_MINUTE
+        value: "20"
+      - key: INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY
+        value: "3"
+
+# The student app (app.smetase.com), staff app (hub.smetase.com) and landing page (smetase.com)
+# are hosted on Cloudflare Pages, not here. See DEPLOY.md.

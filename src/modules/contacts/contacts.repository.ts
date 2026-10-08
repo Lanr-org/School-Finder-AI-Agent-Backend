@@ -1,20 +1,21 @@
 import prisma from '../../database/prisma.js'
-import { ContactProvider, ConversationMode, ConversationStatus, StudentStatus } from '../../generated/prisma/index.js'
+import {
+  ConversationMode,
+  ConversationStatus,
+  StudentIdentityProvider,
+  StudentStatus,
+} from '../../generated/prisma/index.js'
 import { createPublicConversationId } from '../../common/security/publicId.js'
 import { CreateContactStudentTransactionData } from './contacts.types.js'
 
 export class ContactsRepo {
   /**
-   * Finds an existing Contact by provider identity and includes active student context.
+   * Finds the student behind a Telegram user through their TELEGRAM identity, so a Telegram
+   * account linked to a web-born student resolves to that student. Includes the current thread.
    */
-  static findContactWithActiveStudent = async (providerType: ContactProvider, providerUserId: string) => {
-    return prisma.contacts.findUnique({
-      where: {
-        provider_type_provider_user_id: {
-          provider_type: providerType,
-          provider_user_id: providerUserId,
-        },
-      },
+  static findStudentByTelegramId = async (telegramUserId: string) => {
+    const identity = await prisma.studentIdentity.findUnique({
+      where: { provider_subject: { provider: StudentIdentityProvider.TELEGRAM, subject: telegramUserId } },
       include: {
         student: {
           include: {
@@ -30,6 +31,7 @@ export class ContactsRepo {
         },
       },
     })
+    return identity?.student ?? null
   }
 
   /**
@@ -71,12 +73,33 @@ export class ContactsRepo {
         },
       })
 
+      // Initial timeline entry — system-created lead, no staff user involved.
+      await tx.studentStatusHistory.create({
+        data: {
+          student_id: newStudent.id,
+          from_status: null,
+          to_status: StudentStatus.NEW,
+          source: 'LEAD_CREATED',
+          changed_by: null,
+        },
+      })
+
       const newConversation = await tx.conversations.create({
         data: {
           public_id: createPublicConversationId(),
           student_id: newStudent.id,
           mode: ConversationMode.AI_BOT,
           status: ConversationStatus.ACTIVE,
+        },
+      })
+
+      // How later Telegram messages find this student (findStudentByTelegramId).
+      await tx.studentIdentity.create({
+        data: {
+          student_id: newStudent.id,
+          provider: StudentIdentityProvider.TELEGRAM,
+          subject: data.providerUserId,
+          email: null,
         },
       })
 

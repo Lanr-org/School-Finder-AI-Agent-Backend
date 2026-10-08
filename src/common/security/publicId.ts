@@ -5,6 +5,11 @@ export const createPublicUserId = (): string => {
   return `USR-${randomBytes(6).toString('hex').toUpperCase()}`
 }
 
+export const createPublicStudentId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `STU-${randomNum}`
+}
+
 export const createPublicSchoolId = (): string => {
   const randomNum = Math.floor(1000 + Math.random() * 9000)
   return `SCH-${randomNum}`
@@ -43,6 +48,11 @@ export const createPublicVisaRateId = (): string => {
 export const createPublicRecommendationRunId = (): string => {
   const randomNum = Math.floor(1000 + Math.random() * 9000)
   return `RUN-${randomNum}`
+}
+
+export const createPublicApplicationId = (): string => {
+  const randomNum = Math.floor(1000 + Math.random() * 9000)
+  return `APP-${randomNum}`
 }
 
 const isPublicIdConflict = (error: unknown): boolean => {

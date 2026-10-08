@@ -1,6 +1,8 @@
 import { createError } from '../../common/errors/AppError'
 import { createPublicSchoolId, withUniquePublicId } from '../../common/security/publicId'
 import { SchoolsRepo } from './schools.repository'
+import { AuditService } from '../audit/audit.service'
+import { AUDIT_ACTIONS } from '../audit/audit.actions'
 import type { Schools } from '../../generated/prisma/index.js'
 import type { CreateSchoolDTO, ListSchoolsQueryDTO, UpdateSchoolDTO } from './schools.types'
 
@@ -34,8 +36,17 @@ const toSchoolResponse = (school: Schools) => ({
 export class SchoolsService {
   // ── POST /schools ─────────────────────────────────────────────────────────
   static CreateSchool = async (data: CreateSchoolDTO) => {
+    // withAudit inside the retry: a public-ID collision aborts the transaction.
     const school = await withUniquePublicId(createPublicSchoolId, (publicId) =>
-      SchoolsRepo.createSchool(publicId, data),
+      AuditService.withAudit(
+        (tx) => SchoolsRepo.createSchool(publicId, data, tx),
+        (created) => ({
+          action: AUDIT_ACTIONS.SCHOOL_CREATED,
+          entityType: 'school',
+          entityId: created.public_id,
+          after: toSchoolResponse(created),
+        }),
+      ),
     )
     return toSchoolResponse(school)
   }
@@ -73,7 +84,16 @@ export class SchoolsService {
       throw createError('School not found', 404, {}, 'NOT_FOUND')
     }
 
-    const updated = await SchoolsRepo.updateSchool(school.id, data)
+    const updated = await AuditService.withAudit(
+      (tx) => SchoolsRepo.updateSchool(school.id, data, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.SCHOOL_UPDATED,
+        entityType: 'school',
+        entityId: school.public_id,
+        before: toSchoolResponse(school),
+        after: toSchoolResponse(after),
+      }),
+    )
     return toSchoolResponse(updated)
   }
 
@@ -89,7 +109,16 @@ export class SchoolsService {
       throw createError('School is already inactive', 409, {}, 'CONFLICT')
     }
 
-    const updated = await SchoolsRepo.softDeleteSchool(school.id)
+    const updated = await AuditService.withAudit(
+      (tx) => SchoolsRepo.softDeleteSchool(school.id, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.SCHOOL_DEACTIVATED,
+        entityType: 'school',
+        entityId: school.public_id,
+        before: { recordStatus: school.record_status },
+        after: { recordStatus: after.record_status },
+      }),
+    )
     return toSchoolResponse(updated)
   }
 }

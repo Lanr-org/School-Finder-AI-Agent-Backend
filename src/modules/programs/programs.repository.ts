@@ -1,5 +1,6 @@
 import prisma from '../../database/prisma.js'
 import type { Prisma } from '../../generated/prisma/index.js'
+import type { Db } from '../../database/transaction.js'
 import type { CreateProgramDTO, ListProgramsFilters, UpdateProgramDTO } from './programs.types.js'
 
 const withSchool = {
@@ -7,8 +8,13 @@ const withSchool = {
 } as const
 
 export class ProgramsRepo {
-  static createProgram = async (publicId: string, schoolId: string, data: CreateProgramDTO) => {
-    return prisma.programs.create({
+  static createProgram = async (
+    publicId: string,
+    schoolId: string,
+    data: CreateProgramDTO,
+    db: Db = prisma,
+  ) => {
+    return db.programs.create({
       ...withSchool,
       data: {
         public_id: publicId,
@@ -66,8 +72,13 @@ export class ProgramsRepo {
     return { programs, total }
   }
 
-  static updateProgram = async (id: string, schoolId: string | undefined, data: UpdateProgramDTO) => {
-    return prisma.programs.update({
+  static updateProgram = async (
+    id: string,
+    schoolId: string | undefined,
+    data: UpdateProgramDTO,
+    db: Db = prisma,
+  ) => {
+    return db.programs.update({
       where: { id },
       ...withSchool,
       data: {

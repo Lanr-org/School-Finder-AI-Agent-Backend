@@ -2,6 +2,9 @@ export interface AppError extends Error {
   statusCode: number
   code: string
   details?: unknown
+  // Set when the root cause was already sent to Sentry, so the error handler doesn't
+  // report this wrapper a second time.
+  reported?: boolean
 }
 
 export const createError = (

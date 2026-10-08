@@ -3,14 +3,21 @@ import { z } from 'zod'
 
 dotenv.config()
 
+export const LLM_PROVIDERS = ['anthropic', 'openai', 'gemini'] as const
+export type LlmProvider = (typeof LLM_PROVIDERS)[number]
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   COOKIE_SECRET: z.string().min(1, 'COOKIE_SECRET is required'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
-  DOCS_ENABLED: z.stringbool().default(true),
+  // Swagger UI and /openapi.json. When unset: on in development, off in production.
+  DOCS_ENABLED: z.stringbool().optional(),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  // How many reverse proxies sit in front of the API (Render: 1). Without this every client
+  // looks like the proxy's IP, so all students would share one rate-limit bucket.
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
 
   // Email (Optional in dev)
   SMTP_HOST: z.string().optional(),
@@ -18,12 +25,31 @@ const envSchema = z.object({
   SMTP_SECURE: z.stringbool().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  EMAIL_FROM: z.string().default('School Finder AI <no-reply@example.com>'),
+  EMAIL_FROM: z.string().default('Smetase <no-reply@example.com>'),
 
   // Telegram Integration
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().optional(),
+  // Without the leading @; used for t.me links that connect a web account to Telegram.
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
+
+  // LLM: the provider that answers first, then the fallbacks tried in order when it fails
+  // (overloaded, rate limited, down), e.g. "openai,gemini" or "none". Each needs its own key below.
+  LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('gemini'),
+  LLM_FALLBACK_PROVIDERS: z
+    .string()
+    .default('none')
+    .transform((value) => value.split(',').map((p) => p.trim().toLowerCase()).filter((p) => p && p !== 'none'))
+    .pipe(z.array(z.enum(LLM_PROVIDERS))),
+
+  // Anthropic (Claude)
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-5-5'),
+
+  // OpenAI
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-5-mini'),
 
   // Gemini (LLM) Integration
   GEMINI_API_KEY: z.string().optional(),
@@ -36,6 +62,40 @@ const envSchema = z.object({
 
   // Redis / Queue
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
+
+  // AI usage limits (replies per UTC day, Telegram messages per minute per chat)
+  AI_DAILY_REPLIES_PER_STUDENT: z.coerce.number().int().positive().default(40),
+  AI_DAILY_REPLIES_GLOBAL: z.coerce.number().int().positive().default(1500),
+  TELEGRAM_MESSAGES_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  // Mock interviews a student can start per UTC day (each costs ~6 AI calls).
+  INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY: z.coerce.number().int().positive().default(3),
+
+  // Error monitoring: off when SENTRY_DSN is unset (local dev and tests).
+  SENTRY_DSN: z.string().url().optional().or(z.literal('').transform(() => undefined)),
+  // Defaults to NODE_ENV; set it to tell staging and production apart.
+  SENTRY_ENVIRONMENT: z.string().optional(),
+
+  // Student sign-in
+  GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
+  // Separate from JWT_SECRET so a student token can never pass staff verification.
+  STUDENT_JWT_SECRET: z.string().min(32, 'STUDENT_JWT_SECRET must be at least 32 characters'),
+  STUDENT_APP_URL: z.string().url().default('http://localhost:5174'),
+}).refine((vars) => vars.STUDENT_JWT_SECRET !== vars.JWT_SECRET, {
+  message: 'STUDENT_JWT_SECRET must be different from JWT_SECRET',
+  path: ['STUDENT_JWT_SECRET'],
+}).superRefine((vars, ctx) => {
+  // Production only: fail at startup rather than run with weak secrets or insecure origins.
+  if (vars.NODE_ENV !== 'production') return
+  for (const key of ['JWT_SECRET', 'COOKIE_SECRET'] as const) {
+    if (vars[key].length < 32) {
+      ctx.addIssue({ code: 'custom', path: [key], message: `${key} must be at least 32 characters in production` })
+    }
+  }
+  for (const key of ['FRONTEND_URL', 'STUDENT_APP_URL'] as const) {
+    if (!vars[key].startsWith('https://')) {
+      ctx.addIssue({ code: 'custom', path: [key], message: `${key} must be an https:// URL in production` })
+    }
+  }
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -52,8 +112,9 @@ export const env = {
   databaseUrl: parsed.data.DATABASE_URL,
   cookieSecret: parsed.data.COOKIE_SECRET,
   jwtSecret: parsed.data.JWT_SECRET,
-  docsEnabled: parsed.data.DOCS_ENABLED,
+  docsEnabled: parsed.data.DOCS_ENABLED ?? parsed.data.NODE_ENV !== 'production',
   frontendUrl: parsed.data.FRONTEND_URL,
+  trustProxy: parsed.data.TRUST_PROXY,
 
   smtpHost: parsed.data.SMTP_HOST,
   smtpPort: parsed.data.SMTP_PORT,
@@ -65,6 +126,14 @@ export const env = {
   telegramBotToken: parsed.data.TELEGRAM_BOT_TOKEN,
   telegramWebhookSecret: parsed.data.TELEGRAM_WEBHOOK_SECRET,
   telegramWebhookUrl: parsed.data.TELEGRAM_WEBHOOK_URL,
+  telegramBotUsername: parsed.data.TELEGRAM_BOT_USERNAME,
+
+  llmProvider: parsed.data.LLM_PROVIDER,
+  llmFallbackProviders: parsed.data.LLM_FALLBACK_PROVIDERS,
+  anthropicApiKey: parsed.data.ANTHROPIC_API_KEY,
+  anthropicModel: parsed.data.ANTHROPIC_MODEL,
+  openaiApiKey: parsed.data.OPENAI_API_KEY,
+  openaiModel: parsed.data.OPENAI_MODEL,
 
   geminiApiKey: parsed.data.GEMINI_API_KEY,
   geminiModel: parsed.data.GEMINI_MODEL,
@@ -74,6 +143,18 @@ export const env = {
   centrifugoHMACSecret: parsed.data.CENTRIFUGO_HMAC_SECRET,
 
   redisUrl: parsed.data.REDIS_URL,
+
+  aiDailyRepliesPerStudent: parsed.data.AI_DAILY_REPLIES_PER_STUDENT,
+  aiDailyRepliesGlobal: parsed.data.AI_DAILY_REPLIES_GLOBAL,
+  telegramMessagesPerMinute: parsed.data.TELEGRAM_MESSAGES_PER_MINUTE,
+  interviewSessionsPerStudentPerDay: parsed.data.INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY,
+
+  sentryDsn: parsed.data.SENTRY_DSN,
+  sentryEnvironment: parsed.data.SENTRY_ENVIRONMENT,
+
+  googleClientId: parsed.data.GOOGLE_CLIENT_ID,
+  studentJwtSecret: parsed.data.STUDENT_JWT_SECRET,
+  studentAppUrl: parsed.data.STUDENT_APP_URL,
 }
 
 export default env

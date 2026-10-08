@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import type { AppError } from '../common/errors/AppError'
 import env from '../config/env'
 import { logger } from '../config/logger'
+import { captureError } from '../config/sentry'
 
 export const errorHandler = (
   err: AppError,
@@ -21,6 +22,13 @@ export const errorHandler = (
 
   if (statusCode >= 500) {
     logger.error({ err, requestId: req.id, code }, 'Unhandled request error')
+    // Only server errors: 4xx are the client's mistakes, not ours to chase.
+    if (!err.reported) {
+      const routePath = (req.route as { path?: string } | undefined)?.path
+      captureError(err, {
+        tags: { requestId, code, route: `${req.method} ${routePath ?? 'unmatched'}` },
+      })
+    }
   }
 
   let errDetails: {
@@ -37,7 +45,20 @@ export const errorHandler = (
     requestId,
   }
 
-  if (env.nodeEnv === 'development' && err.details !== undefined) {
+  // Most errors pass `{}` — only send details that carry something.
+  const hasDetails =
+    err.details !== undefined &&
+    err.details !== null &&
+    !(
+      typeof err.details === 'object' &&
+      !Array.isArray(err.details) &&
+      Object.keys(err.details).length === 0
+    )
+
+  // Client errors (4xx) always carry their details (validation field errors,
+  // conflict context such as allowed next statuses). Server errors (5xx) can
+  // carry stack traces, so their details are only exposed in development.
+  if (hasDetails && (statusCode < 500 || env.nodeEnv === 'development')) {
     errDetails = { ...errDetails, details: err.details }
   }
 

@@ -26,7 +26,9 @@ vi.mock('../src/modules/conversations/conversations.repository', () => ({
     handbackConversation: vi.fn(),
     findRecentMessages: vi.fn(),
     createMessage: vi.fn(),
-    touchLastActivity: vi.fn(),
+    findLastStudentChannel: vi.fn(),
+    findTelegramChatId: vi.fn(),
+    findLastSenderType: vi.fn(),
   },
 }))
 
@@ -159,6 +161,19 @@ describe('Conversations API — GET /api/v1/conversations/:conversationId', () =
     expect(body<{ publicId: string }>(res).data.publicId).toBe('CON-3854')
   })
 
+  it('labels each message with its channel', async () => {
+    const authToken = asAdmin()
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findRecentMessages.mockResolvedValue([
+      { sender_type: 'STUDENT', content: 'Hi', channel: 'WEB', created_at: new Date('2024-01-01') },
+    ] as any)
+
+    const res = await request(app).get('/api/v1/conversations/CON-3854').set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(200)
+    expect(body<{ messages: { channel: string }[] }>(res).data.messages[0]?.channel).toBe('WEB')
+  })
+
   it('returns 403 for an ADVISOR the conversation is not assigned to', async () => {
     const authToken = asAdvisor(OTHER_ADVISOR_ID)
     conversationsRepoMock.findConversationByPublicId.mockResolvedValue(
@@ -213,22 +228,59 @@ describe('Conversations API — GET /api/v1/conversations', () => {
       expect.objectContaining({ unassigned: true }),
     )
   })
+
+  // Regression: z.coerce.boolean() used to turn the string "false" into true.
+  it('treats unassigned=false as false, not true', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .get('/api/v1/conversations?unassigned=false')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(200)
+    expect(conversationsRepoMock.listConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ unassigned: false }),
+    )
+  })
+
+  it('rejects a non-boolean unassigned value', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .get('/api/v1/conversations?unassigned=yes')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(400)
+    expect(conversationsRepoMock.listConversations).not.toHaveBeenCalled()
+  })
 })
 
 describe('Conversations API — POST /api/v1/conversations/:conversationId/replies', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    conversationsRepoMock.createMessage.mockResolvedValue({
-      sender_type: 'ADVISOR',
-      content: 'Hi, I can help from here.',
-      created_at: new Date('2024-01-01'),
-    } as any)
-    conversationsRepoMock.touchLastActivity.mockResolvedValue({} as any)
+    // Echo back what was saved, so the response's channel reflects the routing decision.
+    conversationsRepoMock.createMessage.mockImplementation(
+      async (_conversationId, senderType, content, channel) =>
+        ({ sender_type: senderType, content, channel, created_at: new Date('2024-01-01') }) as any,
+    )
+    // Defaults: a Telegram-linked student whose last message came from them.
+    conversationsRepoMock.findTelegramChatId.mockResolvedValue('2011329752')
+    conversationsRepoMock.findLastSenderType.mockResolvedValue('STUDENT')
+    teamRepoMock.findUsersByIds.mockResolvedValue([
+      { id: ADVISOR_ID, public_id: 'USR-0002', full_name: 'Amina Yusuf' },
+    ] as any)
   })
 
-  it('persists the reply and sends it through Telegram for the assigned advisor', async () => {
+  const webContact = {
+    ...makeConversation().student.contact,
+    provider_type: 'LIVE_CHAT' as const,
+    provider_user_id: 'google-sub-123',
+  }
+
+  it('sends the reply through Telegram when the student last wrote on Telegram', async () => {
     const authToken = asAdvisor(ADVISOR_ID)
     conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('TELEGRAM')
     telegramOutboundMock.sendMessage.mockResolvedValue(true)
 
     const res = await request(app)
@@ -241,9 +293,117 @@ describe('Conversations API — POST /api/v1/conversations/:conversationId/repli
       'conversation-uuid-1',
       'ADVISOR',
       'Hi, I can help from here.',
+      'TELEGRAM',
     )
     expect(telegramOutboundMock.sendMessage).toHaveBeenCalledWith('2011329752', 'Hi, I can help from here.')
-    expect(body<{ delivered: boolean }>(res).data.delivered).toBe(true)
+    expect(body<{ delivered: boolean; channel: string }>(res).data).toMatchObject({
+      delivered: true,
+      channel: 'TELEGRAM',
+    })
+  })
+
+  it('keeps the reply on the web when the student last wrote on the web', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('WEB')
+    conversationsRepoMock.findTelegramChatId.mockResolvedValue(null)
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'Hi, I can help from here.' })
+
+    expect(res.status).toBe(201)
+    expect(telegramOutboundMock.sendMessage).not.toHaveBeenCalled()
+    expect(body<{ delivered: boolean; channel: string }>(res).data).toMatchObject({
+      delivered: true,
+      channel: 'WEB',
+    })
+  })
+
+  it('nudges a Telegram-linked student on Telegram when the reply stays on the web', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('WEB')
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'Hi, I can help from here.' })
+
+    expect(res.status).toBe(201)
+    expect(body<{ channel: string }>(res).data.channel).toBe('WEB')
+    expect(telegramOutboundMock.sendMessage).toHaveBeenCalledTimes(1)
+    const [chatId, text] = telegramOutboundMock.sendMessage.mock.calls[0]!
+    expect(chatId).toBe('2011329752')
+    expect(text).toBe('Amina replied to you in Smetase. Open your chat: http://localhost:5174/app')
+    expect(text).not.toContain('I can help') // the reply itself stays on the web
+  })
+
+  it('nudges only once per burst of advisor replies', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('WEB')
+    conversationsRepoMock.findLastSenderType.mockResolvedValue('ADVISOR')
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'One more thing.' })
+
+    expect(res.status).toBe(201)
+    expect(telegramOutboundMock.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('sends to the web for a web-only student who has not written yet', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(
+      makeConversation({ student: { ...makeConversation().student, contact: webContact } }) as any,
+    )
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue(null)
+    conversationsRepoMock.findTelegramChatId.mockResolvedValue(null)
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'Hi, I can help from here.' })
+
+    expect(res.status).toBe(201)
+    expect(telegramOutboundMock.sendMessage).not.toHaveBeenCalled()
+    expect(body<{ channel: string }>(res).data.channel).toBe('WEB')
+  })
+
+  it('never sends to Telegram without a linked Telegram account, even if a message says TELEGRAM', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(
+      makeConversation({ student: { ...makeConversation().student, contact: webContact } }) as any,
+    )
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('TELEGRAM')
+    conversationsRepoMock.findTelegramChatId.mockResolvedValue(null)
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'Hi, I can help from here.' })
+
+    expect(res.status).toBe(201)
+    expect(telegramOutboundMock.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('reports delivered false when the Telegram send cannot be queued', async () => {
+    const authToken = asAdvisor(ADVISOR_ID)
+    conversationsRepoMock.findConversationByPublicId.mockResolvedValue(makeConversation() as any)
+    conversationsRepoMock.findLastStudentChannel.mockResolvedValue('TELEGRAM')
+    telegramOutboundMock.sendMessage.mockResolvedValue(false)
+
+    const res = await request(app)
+      .post('/api/v1/conversations/CON-3854/replies')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ content: 'Hi, I can help from here.' })
+
+    expect(res.status).toBe(201)
+    expect(conversationsRepoMock.createMessage).toHaveBeenCalled()
+    expect(body<{ delivered: boolean }>(res).data.delivered).toBe(false)
   })
 
   it('is forbidden for an advisor who does not own the conversation', async () => {

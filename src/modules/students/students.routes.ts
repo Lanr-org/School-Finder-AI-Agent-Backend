@@ -7,6 +7,8 @@ import { FollowUpsController } from '../followUps/followUps.controller.js'
 import { FollowUpsSchemas } from '../followUps/followUps.schemas.js'
 import { RecommendationsController } from '../recommendations/recommendations.controller.js'
 import { RecommendationsSchemas } from '../recommendations/recommendations.schemas.js'
+import { ApplicationsController } from '../applications/applications.controller.js'
+import { ApplicationsSchemas } from '../applications/applications.schemas.js'
 import {
   validate,
   validateParams,
@@ -55,6 +57,13 @@ studentsRouter.patch(
   validateParams(StudentsSchemas.studentIdParamsSchema),
   validate(StudentsSchemas.updateStatusSchema),
   StudentsController.UpdateStatus,
+)
+
+studentsRouter.get(
+  '/:studentId/status-history',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  StudentsController.GetStatusHistory,
 )
 
 // ── Notes ────────────────────────────────────────────────────────────────────
@@ -128,6 +137,23 @@ studentsRouter.post(
   FollowUpsController.Cancel,
 )
 
+// ── Applications ─────────────────────────────────────────────────────────────
+studentsRouter.get(
+  '/:studentId/applications',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validateQuery(ApplicationsSchemas.listStudentApplicationsQuerySchema),
+  ApplicationsController.ListForStudent,
+)
+
+studentsRouter.post(
+  '/:studentId/applications',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  validate(ApplicationsSchemas.createApplicationSchema),
+  ApplicationsController.Create,
+)
+
 // ── Recommendations ──────────────────────────────────────────────────────────
 studentsRouter.post(
   '/:studentId/recommendation-runs',
@@ -135,6 +161,28 @@ studentsRouter.post(
   validateParams(StudentsSchemas.studentIdParamsSchema),
   validate(RecommendationsSchemas.generateRunSchema),
   RecommendationsController.GenerateRun,
+)
+
+// The student's journey; staff tick the steps the system can't detect (deposit, English, funds).
+studentsRouter.get(
+  '/:studentId/journey',
+  canAccessStudents,
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  StudentsController.GetJourney,
+)
+
+studentsRouter.put(
+  '/:studentId/journey/checks/:key',
+  canAccessStudents,
+  validateParams(StudentsSchemas.journeyCheckParamsSchema),
+  StudentsController.SetJourneyCheck,
+)
+
+studentsRouter.delete(
+  '/:studentId/journey/checks/:key',
+  canAccessStudents,
+  validateParams(StudentsSchemas.journeyCheckParamsSchema),
+  StudentsController.SetJourneyCheck,
 )
 
 studentsRouter.get(

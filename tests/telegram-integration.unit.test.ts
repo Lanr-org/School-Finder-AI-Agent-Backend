@@ -98,6 +98,37 @@ describe('Telegram Integration Unit Tests', () => {
         isCallback: true,
       })
     })
+
+    it('should flag a group text message as isGroup', () => {
+      const mockUpdate: TelegramWebhookUpdate = {
+        update_id: 10004,
+        message: {
+          message_id: 504,
+          date: 1600000000,
+          chat: { id: -100123456, type: 'group', title: 'Study abroad chat' },
+          text: 'Anyone applying to Canada?',
+        },
+      }
+
+      expect(TelegramMessageMapper.toInboundMessage(mockUpdate)?.isGroup).toBe(true)
+    })
+
+    it('should flag a callback query from a supergroup as isGroup', () => {
+      const mockUpdate: TelegramWebhookUpdate = {
+        update_id: 10005,
+        callback_query: {
+          id: 'cb_67890',
+          from: { id: 987654321, first_name: 'Chinedu' },
+          message: {
+            message_id: 505,
+            chat: { id: -100123456, type: 'supergroup' },
+          },
+          data: 'SELECT_LEVEL:MASTERS',
+        },
+      }
+
+      expect(TelegramMessageMapper.toInboundMessage(mockUpdate)?.isGroup).toBe(true)
+    })
   })
 
   describe('TelegramFormattingUtil', () => {

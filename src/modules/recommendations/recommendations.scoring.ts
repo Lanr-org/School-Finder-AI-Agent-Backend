@@ -37,6 +37,11 @@ export interface ScoredProgram {
 
 const clamp = (value: number): number => Math.max(0, Math.min(100, value))
 
+// Only an actual result counts: a band score (any number, e.g. "IELTS 6.5") or a WAEC
+// English credit. Answers like "IELTS booked" or "Not taken yet" are not evidence.
+export const hasEnglishEvidence = (value: string | null): boolean =>
+  value !== null && (/\d/.test(value) || /waec/i.test(value))
+
 // programFit: study-level match (reused keyword-based normalizer — free-text
 // Student.study_level has no other structured signal today) plus whether the
 // student has *something* on file to weigh against each requirement field.
@@ -80,7 +85,7 @@ export const scoreProgramFit = (
 
   if (!program.english_requirements) {
     score += 15
-  } else if (student.english_test_score) {
+  } else if (hasEnglishEvidence(student.english_test_score)) {
     score += 15
     reasons.push('English test score on file')
   } else {

@@ -1,10 +1,11 @@
 import prisma from '../../database/prisma.js'
 import type { Prisma } from '../../generated/prisma/index.js'
+import type { Db } from '../../database/transaction.js'
 import type { CreateSchoolDTO, ListSchoolsQueryDTO, UpdateSchoolDTO } from './schools.types.js'
 
 export class SchoolsRepo {
-  static createSchool = async (publicId: string, data: CreateSchoolDTO) => {
-    return prisma.schools.create({
+  static createSchool = async (publicId: string, data: CreateSchoolDTO, db: Db = prisma) => {
+    return db.schools.create({
       data: {
         public_id: publicId,
         name: data.name,
@@ -60,8 +61,8 @@ export class SchoolsRepo {
     return { schools, total }
   }
 
-  static updateSchool = async (id: string, data: UpdateSchoolDTO) => {
-    return prisma.schools.update({
+  static updateSchool = async (id: string, data: UpdateSchoolDTO, db: Db = prisma) => {
+    return db.schools.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -88,8 +89,8 @@ export class SchoolsRepo {
     })
   }
 
-  static softDeleteSchool = async (id: string) => {
-    return prisma.schools.update({
+  static softDeleteSchool = async (id: string, db: Db = prisma) => {
+    return db.schools.update({
       where: { id },
       data: { record_status: 'INACTIVE' },
     })

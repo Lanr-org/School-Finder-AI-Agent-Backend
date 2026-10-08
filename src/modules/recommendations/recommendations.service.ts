@@ -13,6 +13,8 @@ import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
 import TeamRepo from '../team/team.repository.js'
 import type { Prisma } from '../../generated/prisma/index.js'
 import { RecommendationsRepo } from './recommendations.repository.js'
+import { AuditService } from '../audit/audit.service.js'
+import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
 import {
   scoreProgram,
   type ScoredProgram,
@@ -28,6 +30,20 @@ import type {
 // Bumped only when the scoring algorithm itself changes (not when weights
 // change — that's weights_version) so past runs stay interpretable even after
 // the formula evolves.
+const toWeightsSnapshot = (row: {
+  version: number
+  program_weight: number
+  budget_weight: number
+  intake_weight: number
+  visa_weight: number
+}) => ({
+  version: row.version,
+  programWeight: row.program_weight,
+  budgetWeight: row.budget_weight,
+  intakeWeight: row.intake_weight,
+  visaWeight: row.visa_weight,
+})
+
 const SCORING_VERSION = 'v1'
 const POOL_CAP = 300
 
@@ -185,7 +201,25 @@ export class RecommendationsService {
 
   // ── PUT /settings/recommendation-weights ────────────────────────────────
   static UpdateWeights = async (dto: UpdateWeightsDTO) => {
-    const row = await RecommendationsRepo.insertNextWeightsVersion(dto)
+    // Previous version read inside the same transaction as the insert, so the
+    // audit "before" is exactly the version this one replaced.
+    const { row } = await AuditService.withAudit(
+      async (tx) => {
+        const previous = await RecommendationsRepo.getLatestWeightsRow(tx)
+        const inserted = await RecommendationsRepo.insertNextWeightsVersion(
+          dto,
+          tx,
+        )
+        return { row: inserted, previous }
+      },
+      ({ row: inserted, previous }) => ({
+        action: AUDIT_ACTIONS.RECOMMENDATION_WEIGHTS_UPDATED,
+        entityType: 'recommendation_weights',
+        entityId: String(inserted.version),
+        before: previous ? toWeightsSnapshot(previous) : null,
+        after: toWeightsSnapshot(inserted),
+      }),
+    )
     return {
       version: row.version,
       programWeight: row.program_weight,

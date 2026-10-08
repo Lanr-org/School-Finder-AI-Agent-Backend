@@ -1,6 +1,7 @@
 import { Worker, Job } from 'bullmq'
 import env from '../../config/env.js'
 import { logger } from '../../config/logger.js'
+import { captureWorkerFailure } from '../../config/sentry.js'
 import { TelegramBotService } from '../../integrations/telegram/services/telegram-bot.service.js'
 import { OutboundTelegramPayload } from '../../integrations/telegram/services/telegram-outbound.service.js'
 
@@ -41,4 +42,5 @@ telegramOutboundWorker.on('completed', (job) => {
 
 telegramOutboundWorker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, error: err.message }, 'Outbound Telegram message delivery failed.')
+  captureWorkerFailure('telegram-outbound', job, err)
 })

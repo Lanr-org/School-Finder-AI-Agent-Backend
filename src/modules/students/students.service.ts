@@ -11,6 +11,12 @@ import TeamRepo from '../team/team.repository.js'
 import { buildAdvisorLookup, type AdvisorRef } from '../team/advisor-lookup.js'
 import { AdvisorsRepo } from '../advisors/advisors.repository.js'
 import { StudentsRepo } from './students.repository.js'
+import { StudentStatusHistoryRepo } from './statusHistory.repository.js'
+import { AuditService } from '../audit/audit.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
+import { AUDIT_ACTIONS } from '../audit/audit.actions.js'
+import JourneyService from '../studentPortal/studentJourney.service.js'
+import type { JourneyCheckKey } from '../../generated/prisma/index.js'
 import type {
   AssignAdvisorToStudentDTO,
   ListStudentsQueryDTO,
@@ -128,15 +134,32 @@ export class StudentsService {
   static AssignAdvisor = async (
     publicId: string,
     dto: AssignAdvisorToStudentDTO,
+    auth: AccessTokenClaims,
   ) => {
     const student = await StudentsService.getStudentByPublicId(publicId)
+    const previousAdvisor = student.assigned_advisor_id
+      ? ((await buildAdvisorLookup([student.assigned_advisor_id])).get(
+          student.assigned_advisor_id,
+        ) ?? null)
+      : null
+    const before = { status: student.status, advisor: previousAdvisor }
 
     if (dto.advisorId === null) {
       logger.info(
         { studentId: student.id },
         'Unassigning advisor from student.',
       )
-      const updated = await StudentsRepo.unassignAdvisorFromStudent(student.id)
+      const updated = await AuditService.withAudit(
+        (tx) =>
+          StudentsRepo.unassignAdvisorFromStudent(student.id, auth.sub, tx),
+        (after) => ({
+          action: AUDIT_ACTIONS.ADVISOR_UNASSIGNED,
+          entityType: 'student',
+          entityId: student.public_id,
+          before,
+          after: { status: after.status, advisor: null },
+        }),
+      )
       return toStudentResponse(
         { ...updated, contact: student.contact },
         new Map(),
@@ -169,16 +192,37 @@ export class StudentsService {
       { studentId: student.id, advisorId: advisor.id },
       'Assigning advisor to student.',
     )
-    const updated = await StudentsRepo.assignAdvisorToStudent(
-      student.id,
-      advisor.id,
+    const advisorRef = {
+      publicId: advisor.public_id,
+      fullName: advisor.full_name,
+    }
+    const updated = await AuditService.withAudit(
+      (tx) =>
+        StudentsRepo.assignAdvisorToStudent(
+          student.id,
+          advisor.id,
+          auth.sub,
+          tx,
+        ),
+      (after) => ({
+        action: AUDIT_ACTIONS.ADVISOR_ASSIGNED,
+        entityType: 'student',
+        entityId: student.public_id,
+        before,
+        after: { status: after.status, advisor: advisorRef },
+      }),
     )
-    const advisorLookup = new Map([
-      [
-        advisor.id,
-        { publicId: advisor.public_id, fullName: advisor.full_name },
-      ],
-    ])
+    const studentName =
+      [student.contact.first_name, student.contact.last_name]
+        .filter(Boolean)
+        .join(' ') || student.public_id
+    await NotificationsService.notify([advisor.id], {
+      type: 'ASSIGNMENT',
+      title: 'New student assigned to you',
+      body: `${studentName} (${student.public_id}) was assigned to you.`,
+      link: `/students/${student.public_id}`,
+    })
+    const advisorLookup = new Map([[advisor.id, advisorRef]])
     return toStudentResponse(
       { ...updated, contact: student.contact },
       advisorLookup,
@@ -201,6 +245,7 @@ export class StudentsService {
     publicId: string,
     newStatus: StudentStatus,
     auth: AccessTokenClaims,
+    note?: string,
   ) => {
     const student = await StudentsService.getStudentByPublicId(publicId)
     assertStudentOwnership(student.assigned_advisor_id, auth)
@@ -209,10 +254,33 @@ export class StudentsService {
       { studentId: student.id, newStatus },
       'Updating student lifecycle status.',
     )
-    const updated = await StudentsRepo.updateStudentStatus(
-      student.id,
-      newStatus,
-    )
+    // Same-status requests are a no-op (no history row), so nothing to audit.
+    const updated =
+      student.status === newStatus
+        ? await StudentsRepo.updateStudentStatus(
+            student.id,
+            newStatus,
+            auth.sub,
+            note,
+          )
+        : await AuditService.withAudit(
+            (tx) =>
+              StudentsRepo.updateStudentStatus(
+                student.id,
+                newStatus,
+                auth.sub,
+                note,
+                tx,
+              ),
+            (after) => ({
+              action: AUDIT_ACTIONS.STUDENT_STATUS_CHANGED,
+              entityType: 'student',
+              entityId: student.public_id,
+              before: { status: student.status },
+              after: { status: after.status },
+              ...(note !== undefined && { metadata: { note } }),
+            }),
+          )
     const advisorLookup = await buildAdvisorLookup([
       updated.assigned_advisor_id,
     ])
@@ -220,5 +288,54 @@ export class StudentsService {
       { ...updated, contact: student.contact },
       advisorLookup,
     )
+  }
+
+  // ── GET /students/:studentId/status-history ─────────────────────────────
+  static GetStatusHistory = async (
+    publicId: string,
+    auth: AccessTokenClaims,
+  ) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+
+    const history = await StudentStatusHistoryRepo.listForStudent(student.id)
+    return history.map((entry) => ({
+      fromStatus: entry.from_status,
+      toStatus: entry.to_status,
+      source: entry.source,
+      note: entry.note,
+      changedBy: entry.changer
+        ? {
+            publicId: entry.changer.public_id,
+            fullName: entry.changer.full_name,
+          }
+        : null,
+      changedAt: entry.created_at,
+    }))
+  }
+
+  // ── GET /students/:studentId/journey ────────────────────────────────────
+  // Same journey the student sees, but staff may tick every hand-ticked step (incl. proof of funds).
+  static GetJourney = async (publicId: string, auth: AccessTokenClaims) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+    const journey = await JourneyService.ForStudent(student.id, 'STAFF')
+    if (!journey) throw createError('Student not found', 404, {}, 'NOT_FOUND')
+    return journey
+  }
+
+  // ── PUT / DELETE /students/:studentId/journey/checks/:key ───────────────
+  static SetJourneyCheck = async (
+    publicId: string,
+    key: JourneyCheckKey,
+    done: boolean,
+    auth: AccessTokenClaims,
+  ) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+    assertStudentOwnership(student.assigned_advisor_id, auth)
+    return JourneyService.SetCheck(student, key, done, {
+      kind: 'STAFF',
+      userId: auth.sub,
+    })
   }
 }

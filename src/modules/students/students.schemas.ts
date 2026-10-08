@@ -1,5 +1,6 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
+import { JourneyCheckKey } from '../../generated/prisma/index.js'
 
 extendZodWithOpenApi(z)
 
@@ -43,5 +44,11 @@ export class StudentsSchemas {
 
   static updateStatusSchema = z.object({
     status: studentStatusEnum,
+    note: z.string().trim().min(1).max(2000).optional(),
   })
+
+  static journeyCheckParamsSchema =
+    StudentsSchemas.studentIdParamsSchema.extend({
+      key: z.enum(JourneyCheckKey),
+    })
 }

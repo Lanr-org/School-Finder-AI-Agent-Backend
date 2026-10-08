@@ -5,6 +5,7 @@ import {
   type Prisma,
 } from '../../generated/prisma/index.js'
 import type { ListFollowUpsFilters } from './followUps.types.js'
+import { StudentStatusHistoryRepo } from '../students/statusHistory.repository.js'
 
 export class FollowUpsRepo {
   static findByPublicId = async (studentId: string, followUpId: string) => {
@@ -85,9 +86,12 @@ export class FollowUpsRepo {
         },
       })
 
-      await tx.student.updateMany({
-        where: { id: data.studentId, status: StudentStatus.ASSIGNED },
-        data: { status: StudentStatus.FOLLOW_UP },
+      await StudentStatusHistoryRepo.transition(tx, {
+        studentId: data.studentId,
+        to: StudentStatus.FOLLOW_UP,
+        allowedFrom: [StudentStatus.ASSIGNED],
+        source: 'FOLLOW_UP_CREATED',
+        changedBy: data.advisorId,
       })
 
       return followUp

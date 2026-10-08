@@ -91,10 +91,11 @@ src/
                              #   auth · users · team · advisors · students · followUps
                              #   schools · programs · applications · conversations
                              #   recommendations · notifications · settings · dashboard · audit
-                             # each: routes · controller · service · repository · schemas · types
+                             # each: routes · controller · service · repository · schemas · types · docs
   integrations/              # email/ · telegram/ · ai/
   jobs/                      # queues.ts + workers/ (email, followUpReminder, telegram, recommendation)
-  docs/                      # registry.ts, document.ts (OpenAPI builder)
+  docs/                      # registry.ts (shared registry + building blocks),
+                             #   document.ts (calls every feature's registerXDocs)
 
 prisma/                      # schema.prisma · seed.ts · migrations/
 tests/                       # setup.ts · factories/ · unit/ · integration/ · e2e/
@@ -502,6 +503,12 @@ GET    /api/v1/dashboard/summary
 GET    /api/v1/search?q=     # applies the authenticated user's authorization scope
 ```
 
+### Audit
+
+```
+GET    /api/v1/audit-logs    # ADMIN only; filters: action, entityType, entityId, actorId, from, to
+```
+
 ---
 
 ## Query Conventions
@@ -524,6 +531,8 @@ Validation does not replace service rules or database constraints.
 Expose only when `OPENAPI_ENABLED=true`: `GET /openapi.json`, `GET /docs`.
 Every route documents: auth requirements, allowed roles, params/query/body, success/validation/auth/forbidden/not-found/conflict responses.
 Derive schemas from the same Zod schemas used at runtime. Do not expose stack traces or production-only admin details.
+
+Docs live per feature: `src/modules/<feature>/<feature>.docs.ts` exports `registerXDocs(registry)`, which `src/docs/document.ts` calls in a fixed order. Shared pieces (`errorResponseSchema`, `errorContent()`, `successEnvelope()`, `paginationSchema`, `staffRefSchema`, `emptySuccessResponseSchema`) come from `src/docs/registry.ts`. A component registered by one feature and reused by another (e.g. `StudentIdParams`) is returned from the registering function and passed in — never registered twice. `tests/openapi.test.ts` fails if any route is undocumented, or documented but not implemented.
 
 ---
 
@@ -597,17 +606,20 @@ Development: use a local mail-capture service (e.g. Mailpit) — do not send rea
 
 ## Error Codes
 
-| Code               | HTTP | Notes                                                                                                                                                |
-| ------------------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VALIDATION_ERROR` | 400  |                                                                                                                                                      |
-| `UNAUTHENTICATED`  | 401  |                                                                                                                                                      |
-| `FORBIDDEN`        | 403  |                                                                                                                                                      |
-| `NOT_FOUND`        | 404  |                                                                                                                                                      |
-| `CONFLICT`         | 409  | Duplicate email/school/program, advisor at capacity, invitation already accepted/canceled, setting value in use, stale optimistic-concurrency update |
-| `RATE_LIMITED`     | 429  |                                                                                                                                                      |
-| `INTERNAL_ERROR`   | 500  |                                                                                                                                                      |
+| Code                  | HTTP | Notes                                                                                                                                                |
+| --------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_ERROR`    | 400  |                                                                                                                                                      |
+| `UNAUTHENTICATED`     | 401  |                                                                                                                                                      |
+| `FORBIDDEN`           | 403  |                                                                                                                                                      |
+| `NOT_FOUND`           | 404  |                                                                                                                                                      |
+| `CONFLICT`            | 409  | Duplicate email/school/program, advisor at capacity, invitation already accepted/canceled, setting value in use, stale optimistic-concurrency update |
+| `RATE_LIMITED`        | 429  |                                                                                                                                                      |
+| `INTERNAL_ERROR`      | 500  |                                                                                                                                                      |
+| `SERVICE_UNAVAILABLE` | 503  | `GET /health/ready` only — PostgreSQL unreachable or did not answer within 2s                                                                        |
 
 The global error handler maps known errors to stable public responses and logs unexpected errors once.
+
+`error.details`: client errors (4xx) always include it when non-empty — validation errors as a field map (`{ "email": ["..."] }`, nested fields dot-joined like `intakes.0.year`, field-less errors under `_form`), conflicts with their context (e.g. `allowed` next statuses). Server errors (5xx) can carry stack traces, so their details are only sent when `NODE_ENV=development`.
 
 ---
 
@@ -621,6 +633,15 @@ Log fields: request ID, authenticated user ID, route + method, response status, 
 Audit these actions: login failures, session revocation, invitation CRUD, role/permission/status changes, advisor assignment, student/application status changes, school/program CRUD, settings and recommendation-weight changes.
 
 Redact from all logs: passwords, tokens, auth headers, cookies, SMTP credentials, Telegram bot tokens.
+
+### How audit logging is implemented (`src/modules/audit/`)
+
+- Action names live in `audit.actions.ts` (`AUDIT_ACTIONS`); add new ones there, never inline strings.
+- Wrap the change with `AuditService.withAudit((tx) => Repo.write(..., tx), (result) => entry)` so the business change and its audit row commit or roll back together. Audited repo methods take an optional `db`/`tx` last parameter; multi-statement repo methods use `withTx` from `src/database/transaction.ts` so they can join the caller's transaction.
+- Actor, request ID, IP, and user agent come from the per-request context (`src/common/context/requestContext.ts`), populated by `AuthenticateMiddleware`. Pass `actorId`/`actorRole` explicitly only on public routes (password reset, invitation accept) or to force "system" (`null`).
+- `before`/`after` must be allowlisted public shapes (e.g. `toSchoolResponse`), never raw rows; `sanitizeForAudit` redacts password/token/hash/secret/cookie keys as a safety net.
+- `audit_logs` is insert-only: no update or delete code paths. Read via ADMIN-only `GET /api/v1/audit-logs`.
+- Tests: `tests/setup-global-mocks.ts` mocks the transaction helpers and `AuditRepo` for every suite; assert on `AuditRepo.record` calls.
 
 ---
 
@@ -735,7 +756,7 @@ A backend module is complete when it has:
 - Authorization rules.
 - Service-level business rules.
 - Consistent responses and errors.
-- OpenAPI documentation.
+- OpenAPI documentation in `<feature>.docs.ts`, registered in `src/docs/document.ts` (enforced by `tests/openapi.test.ts`).
 - Unit tests for important rules.
 - Integration tests for database behavior.
 - Audit logging where required.

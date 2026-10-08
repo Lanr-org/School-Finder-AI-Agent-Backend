@@ -10,6 +10,7 @@ import { MatchingRepo } from '../src/modules/matching/matching.repository'
 import { VisaRatesRepo } from '../src/modules/visaRates/visaRates.repository'
 import { RecommendationsRepo } from '../src/modules/recommendations/recommendations.repository'
 import TeamRepo from '../src/modules/team/team.repository'
+import { AuditRepo } from '../src/modules/audit/audit.repository'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,8 @@ const matchingRepoMock = vi.mocked(MatchingRepo)
 const visaRatesRepoMock = vi.mocked(VisaRatesRepo)
 const recommendationsRepoMock = vi.mocked(RecommendationsRepo)
 const teamRepoMock = vi.mocked(TeamRepo)
+// Globally mocked in tests/setup-global-mocks.ts.
+const auditRepoMock = vi.mocked(AuditRepo)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -270,6 +273,14 @@ describe('Recommendation Weights API — GET/PUT /api/v1/settings/recommendation
 
   it('updates for ADMIN when weights sum to 100', async () => {
     const authToken = asAdmin()
+    recommendationsRepoMock.getLatestWeightsRow.mockResolvedValue({
+      version: 1,
+      program_weight: 35,
+      budget_weight: 25,
+      intake_weight: 20,
+      visa_weight: 20,
+      created_at: new Date('2026-09-20'),
+    } as any)
     recommendationsRepoMock.insertNextWeightsVersion.mockResolvedValue({
       version: 2,
       program_weight: 40,
@@ -291,6 +302,29 @@ describe('Recommendation Weights API — GET/PUT /api/v1/settings/recommendation
 
     expect(res.status).toBe(200)
     expect(body<{ version: number }>(res).data.version).toBe(2)
+    // "before" is the version this one replaced, read in the same transaction.
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'recommendation_weights.updated',
+        entity_type: 'recommendation_weights',
+        entity_id: '2',
+        before_data: {
+          version: 1,
+          programWeight: 35,
+          budgetWeight: 25,
+          intakeWeight: 20,
+          visaWeight: 20,
+        },
+        after_data: {
+          version: 2,
+          programWeight: 40,
+          budgetWeight: 20,
+          intakeWeight: 20,
+          visaWeight: 20,
+        },
+      }),
+    )
   })
 })
 

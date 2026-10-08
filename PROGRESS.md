@@ -594,3 +594,309 @@ been updated to match.
 Result: 238/238 tests passing across 11 files, typecheck clean. (`npm run lint` fails, but on
 `scripts/import-programs.mjs` — a pre-existing file from commit `7bd5aed`, untouched this session;
 a pre-existing ESLint typed-linting config gap, not a regression from this work.)
+
+## Applications + student status history (2026-09-25)
+
+BACKLOG #5 (Phase 6). Migration `20260925154347_add_applications_and_status_history` adds
+`student_applications` (`APP-XXXX`), `application_status_history`, and `student_status_history`,
+plus enums `ApplicationStatus` and `StudentStatusChangeSource`. Purely additive; no backfill —
+history starts at migration time.
+
+**Student status history.** `src/modules/students/statusHistory.repository.ts`
+(`StudentStatusHistoryRepo.transition`) moves a student and appends a history row inside the
+caller's transaction, only when the status actually changes. `allowedFrom` guards automatic
+moves so they never regress a student, and the update is guarded on the status just read, so
+concurrent changes can't record a stale `from_status`. All five writers use it: manual
+`PATCH /students/:id/status` (`MANUAL`), assign (`ADVISOR_ASSIGNED`), unassign
+(`ADVISOR_UNASSIGNED`), follow-up create (`FOLLOW_UP_CREATED`), and Telegram lead creation
+(`LEAD_CREATED`, `changed_by` null). New `GET /students/:studentId/status-history`.
+
+Behaviour fixes made along the way:
+- Reassigning an advisor no longer resets a FOLLOW_UP/APPLICATION_STARTED student to ASSIGNED
+  (it only advances from NEW/AWAITING_ASSIGNMENT).
+- Unassigning no longer reopens COMPLETED/CLOSED students.
+- Setting a student to the status they already have is a no-op (no history row).
+
+**Applications module** (`src/modules/applications/`). Forward-only transitions in the pure
+`applications.transitions.ts`: skipping forward is allowed, REJECTED/WITHDRAWN from any open
+status, COMPLETED/REJECTED/WITHDRAWN are final, anything else is 409. Status updates are guarded
+on the previously read status (concurrent change → 409 "refresh and retry"). Create rules:
+program must exist; at most one non-terminal application per student+program (service check,
+not a partial unique index); `intakeMonth`+`intakeYear` must come together and match a stored
+`ProgramIntakes` row, so intakes and deadlines always come from stored records. Creating an
+application also moves an ASSIGNED/FOLLOW_UP student to APPLICATION_STARTED in the same
+transaction. `program_id` is `Restrict` — applications survive program changes; future
+school/program DELETE routes must 409 when applications exist.
+
+Routes: `GET/POST /students/:studentId/applications`, `GET /applications` (advisor-scoped,
+`summary` counts per status), `GET /applications/:applicationId` (with history),
+`PATCH /applications/:applicationId`, `PATCH /applications/:applicationId/status`.
+ADMIN + ADVISOR only; ownership enforced through the application's student. All 7 new
+operations documented in `src/config/openapi.ts`.
+
+Tests: `applications.transitions.test.ts`, `applications.http.test.ts`,
+`student-status-history.unit.test.ts` (in-memory fake transaction), status-history cases in
+`students.http.test.ts`. 402/402 passing, typecheck clean.
+
+Frontend (`lanr-agents-frontend`): `features/applications/` (API, hooks, client-side mirror of
+the transition rule for which options to offer), `CreateApplicationModal` (intake dropdown fed
+only from the program's stored intakes), `ApplicationDetailModal` (details, history, edit, and
+status change reusing `UpdateWorkflowStatusModal` — the application note is persisted),
+`ApplicationsPage` at `/applications` + sidebar entry, and on `StudentDetailPage` an
+Applications card plus a "Recent changes" status timeline (the old "Application status" card
+was renamed "Workflow status", since it shows the student's status). `tsc` + `vite build` clean.
+
+Found, not fixed (see BACKLOG 5c/5d): the student-status note is collected but never persisted;
+`errorHandler` only exposes `error.details` when `NODE_ENV=development`.
+
+## Student-status note + health endpoints (2026-09-26)
+
+**Status note (BACKLOG 5c).** The note collected by `UpdateWorkflowStatusModal` on the student
+page was silently dropped. Migration `20260926041219_add_student_status_history_note` adds a
+nullable `student_status_history.note`; `PATCH /students/:studentId/status` accepts an optional
+`note` (trimmed, 1–2000 chars) and `StudentStatusHistoryRepo.transition` stores it. Automatic
+changes (assignment, follow-up, application) store null; a same-status request with a note is
+still a no-op. `GET /students/:studentId/status-history` returns `note`, and the frontend's
+"Recent changes" timeline shows it. Verified against the real DB on the QA student STU-1927.
+
+**Health endpoints.** `src/modules/health/health.routes.ts`, mounted at `/health` (public,
+outside `/api/v1`). `GET /health/live` → 200 with no dependency checks, so a DB outage never
+gets a healthy process restarted. `GET /health/ready` → 200 when PostgreSQL answers `SELECT 1`
+within 2s, otherwise 503 `SERVICE_UNAVAILABLE` (new code, added to the AGENTS.md error table)
+with no connection details in the response. Both documented in OpenAPI. Verified live against
+the real DB.
+
+Tests: `health.http.test.ts` (live, ready up/down/timeout — the timeout case uses real timers,
+since faking setTimeout also stalls supertest), note cases in `students.http.test.ts` and
+`student-status-history.unit.test.ts`. 411/411 passing; frontend `tsc` + `vite build` clean.
+
+Graceful shutdown (Prisma/BullMQ not closed on SIGTERM) logged as BACKLOG 5e.
+
+## Graceful shutdown (2026-09-26)
+
+BACKLOG 5e. Previously SIGTERM/SIGINT only called `server.close()`: Prisma, the two BullMQ
+workers, and the two queues (each holding Redis connections) were never closed, and there was
+no bound on in-flight requests. `src/shutdown.ts` (`createShutdown`, dependencies injected so
+it's unit-testable) now runs the AGENTS.md order: stop accepting connections and drain
+in-flight requests (10s, then `closeAllConnections`) → close workers (active job may finish) →
+close queues (Redis) → `prisma.$disconnect()` → exit. A 25s hard deadline (unref'd timer) forces
+`exit(1)` before a typical 30s SIGKILL; a failing step is logged and the remaining steps still
+run; a repeated signal is ignored; exit code is 1 if anything was forced or failed. `server.ts`
+wires it for SIGTERM/SIGINT; the SIGABRT handler was dropped (abort() is a crash, not a
+shutdown request). A job cut off by the deadline is left stalled and retried by BullMQ.
+
+Tests: `tests/shutdown.unit.test.ts` (order, repeated signal, forced drain, failing step, hard
+deadline). Verified by loading the real `server.ts` (HTTP + workers on Redis + Prisma), hitting
+`/health/ready` (200), then triggering the SIGTERM handler: clean exit 0 in ~30–60ms.
+416/416 passing.
+
+QA student STU-1927 unassigned from USR-946B7F71768D (kept as a labelled test record, now
+AWAITING_ASSIGNMENT).
+
+## Audit logs (2026-09-26)
+
+BACKLOG #6 (audit part). Nothing required by AGENTS.md was audited before this.
+
+**Storage.** Migration `20260926044844_add_audit_logs`: `audit_logs` (actor, actor role, action,
+entity type + public ID, sanitized before/after/metadata JSONB, request ID, IP, user agent,
+timestamp; indexes on time, entity, actor, action). `entity_id` is not an FK — canceling an
+invitation hard-deletes the invited user, and the audit row (with its snapshot) must outlive it.
+Insert-only at the app level; no DB trigger (confirmed decision).
+
+**Mechanics.**
+- `src/common/context/requestContext.ts` — AsyncLocalStorage store per request (mounted after
+  the body/cookie parsers); `AuthenticateMiddleware` sets the actor from the verified DB user.
+  Services that never received `auth` (schools, programs, settings, weights, team update/status)
+  needed no signature changes.
+- `src/database/transaction.ts` — `runInTransaction` and `withTx`; audited repo methods take an
+  optional transaction, and multi-statement repo methods join the caller's transaction.
+- `AuditService.withAudit(fn, buildEntry)` writes the business change and its audit row in one
+  transaction — verified against the real DB that a failing audit insert rolls the change back.
+- Snapshots are the existing public response shapes; `sanitizeForAudit` redacts
+  password/token/hash/secret/cookie keys as a safety net.
+- Where it matters: failed logins record the attempted email and reason with no actor (response
+  unchanged); system revocations (expired session, device mismatch) have no actor; password reset
+  and invitation acceptance are attributed explicitly (public routes); public-ID retries open a
+  fresh transaction per attempt; a lost application-status race throws inside the transaction so
+  nothing is audited.
+
+**Read API + UI.** ADMIN-only `GET /api/v1/audit-logs` (action, entity type/ID, actor public ID,
+date range, pagination; actor UUIDs never returned), documented in OpenAPI. Frontend Audit log page
+at `/audit-log` (Admin sidebar): filters, plain-English action labels, entity links, expandable
+before → after field diff, metadata, and request/IP/user agent.
+
+**Tests.** New `vitest.config.ts` + `tests/setup-global-mocks.ts` keep every suite off the DB. New
+`audit.core.unit.test.ts` (sanitizer, context survives `express.json`, record/withAudit incl.
+rollback propagation) and `audit.http.test.ts`; per-call-site audit assertions added to the auth,
+team, students, applications, schools, and recommendations suites; ~27 repo-call assertions got the
+extra transaction argument. 435/435 passing; frontend `tsc` + `vite build` clean.
+
+Verified on QA student STU-1927 only. An early check script loaded the code as ES modules — a
+second module instance — so its forced-failure patch didn't apply: STU-1927 was briefly set to
+CLOSED for real (audited, actor null) and then restored; the corrected CommonJS run passed all
+checks. Those rows remain, as audit rows are never deleted.
+
+## API docs split per feature + full backfill (2026-09-26)
+
+BACKLOG 5b. The single `src/config/openapi.ts` (~1,780 lines, 36 of 90 operations documented, one
+of them wrong) is replaced by:
+- `src/docs/registry.ts` — the shared registry plus common building blocks (error envelope,
+  `errorContent()`, `successEnvelope()`, pagination, staff ref, empty success). It now calls
+  `extendZodWithOpenApi(z)` itself: the old file only worked because of import order.
+- `src/docs/document.ts` — calls every feature's `registerXDocs(registry)` in a fixed order;
+  components shared across features (e.g. `StudentIdParams`, `SchoolIdParams`, the student and
+  follow-up list responses) are returned by the registering feature and passed in.
+- One `<feature>.docs.ts` per module (19 files, largest 712 lines).
+
+Phase A (the split) was checked by deep-comparing the generated document against a snapshot taken
+before any move: identical (24 paths, 43 schemas). Phase C then documented the ~58 missing routes
+(team, students, notes, follow-ups, advisors, conversations, recommendations + weights, settings,
+bulletins, visa rates, Telegram webhook) from each module's runtime Zod schemas, with response
+schemas mirroring the services' `toXResponse` mappers, role/ownership rules, audited actions, and
+400/401/403/404/409 cases. The wrong `POST /api/v1/team` entry is replaced by the real 7 team
+routes. Result: 68 paths / 90 operations / 114 schemas.
+
+`tests/openapi.test.ts` walks every mounted router (Express 5 `router.stack`) and fails if a route
+is undocumented, if a documented route doesn't exist, if a router is mounted in `app.ts` but
+missing from the test's map, or if a router yields no routes. AGENTS.md's Definition of Done and
+folder map updated. 440/440 tests passing.
+
+Found while documenting (BACKLOG 5f, not fixed here): `unassigned=false` is coerced to true on
+`GET /conversations`; `GET /students/:id/recommendations` has two response shapes; team routes lack
+param validation; the Telegram webhook uses its own error shape.
+
+## Error details for clients + validation field map (2026-09-26)
+
+BACKLOG 5d. `errorHandler` only sent `error.details` when `NODE_ENV=development`, so production
+clients never got field-level validation errors or 409 context (e.g. an application's allowed next
+statuses). Decision (confirmed): 4xx errors always include non-empty `details`; 5xx `details` stay
+development-only because three internal error sites put stack traces there (`tokenHash.ts`,
+`opaqueToken.ts`, `auth.repository.ts`). Empty `{}` details — what most errors pass — are omitted.
+
+`validate`/`validateParams`/`validateQuery` now return AGENTS.md's field map via `toFieldErrors`
+(`{ "email": ["Must be a valid email address"] }`, nested paths dot-joined like `intakes.0.year`,
+field-less refine errors under `_form`) instead of Zod's raw `{ issues: [...] }`. The frontend doesn't
+read `details` yet, so nothing breaks; forms can now show per-field messages.
+
+Tests: new `errorHandler.http.test.ts` (field map, `_form`, 409 context, empty details omitted, 5xx
+stack never sent outside development); the application-transition 409 test asserts the `allowed`
+list again. 447/447 passing.
+
+## Dashboard summary with real data (2026-09-27)
+
+BACKLOG #6b. `DashboardPage.tsx` was 100% hardcoded and there was no dashboard backend. New module
+`src/modules/dashboard/` serves `GET /api/v1/dashboard/summary` (ADMIN, ADVISOR, OPERATIONS; no
+query params). Scope comes from the token, never the client: ADMIN sees everything; ADVISOR sees
+only their assigned students, those students' conversations, their own follow-ups and their own
+workload row (`scope: 'OWN'`); OPERATIONS gets organisation-wide counts and charts, with
+`pendingFollowUps` / `recentRecommendations` returned as `null` (no student-level lists).
+
+Returns lead totals (all, this week, today, today from Telegram), unassigned open leads, counts for
+all 7 statuses, the assigned share of open leads, active/escalated conversations, top 5
+destinations (country names normalised and merged, e.g. `CANADA`/`UK`), advisor workload (every
+active ADVISOR; `maxCapacity: null` = no cap), the next 5 pending follow-ups, and the top match from
+the latest 5 recommendation runs (one per student). "Today"/"this week" use Africa/Lagos, weeks
+starting Monday (`dashboard.time.ts`).
+
+A read-only real-DB check caught four bugs before commit: the advisor scope was being overwritten
+by a spread (now `AND`-combined), workload listed only advisors with a profile, the same student
+could appear twice in recent recommendations, and upper-case Telegram countries weren't merged.
+
+Frontend: `src/features/dashboard/` (React Query, refetches every 60s) and a rewritten
+`DashboardPage` with the same layout: loading/error/empty states, "My overview" for advisors,
+"Updated HH:MM (Lagos time)", clickable pipeline tiles, and links to students, programs and schools.
+"Export report" removed until reporting exists; "Review leads" opens
+`/students?status=AWAITING_ASSIGNMENT` (hidden for advisors, whose list would always be empty).
+`StudentsPage` now reads its status filter from `?status=`.
+
+Tests: Lagos day/week boundaries, HTTP scoping per role (a client can't widen an advisor's scope),
+repository behaviour. 462/462 passing; frontend `tsc` and `vite build` clean.
+
+## Smetase rebrand, minimal emails, Telegram group-chat guard (2026-09-27)
+
+BACKLOG #7a (strings) and #7b. The product is now **Smetase** (Oyelowo Emmanuel's product, not
+Pikinic). Every "School Finder AI" and "Pikinic" string is replaced: emails, Telegram `/start` and
+`/help`, the `EMAIL_FROM` default, the OpenAPI title, and in the frontend the auth pages, 404 page,
+sidebar, AI message label and page title. The AI system prompt's first line no longer calls us "a
+student recruitment agency"; the rest of the prompt is unchanged.
+
+Emails: the invite and password-reset templates share one minimal layout (`renderEmail`): white
+page, "Smetase" wordmark, large headline, navy `#0B132B` pill button, a grey expiry line, and a
+footer with the fallback link. There's an inbox preheader, system fonts, and the palette sits in one
+`COLORS` constant so it can switch to the final brand blue in one place. Fixes: the invite subject
+used the HTML-escaped inviter name (`O&#39;Brien`); roles now read "Advisor" instead of "ADVISOR".
+
+Telegram: the inbound worker now ignores updates from non-private chats. Before this, adding the bot
+to a group turned the whole group into one student and the AI replied to every message. Callback
+queries were hard-coded `isGroup: false`; the schema now reads the callback chat type (optional),
+so button clicks in groups are ignored too.
+
+Tests: new `email.templates.unit.test.ts` (escaping, raw-name subject, role label, links in the
+button, fallback and plain text) and two group-chat mapper cases. 469/469 passing; frontend `tsc`
+and `vite build` clean. Backend `615253c`, frontend `25c3c3f`.
+
+## Student Google sign-in (2026-09-27)
+
+BACKLOG #8, Stage 2 of the student web app (`Agents/smetase-web`). Students sign in with Google;
+staff auth is untouched and fully separate.
+
+- **Data** (migration `20260927170054_add_student_auth`): `student_identities` (provider enum, only
+  `GOOGLE` today; Google `sub` + lowercased email; unique per provider+subject and per student+provider)
+  and `student_sessions` (mirrors `auth_sessions`). Sign-in methods are separate from students, so
+  email/password sign-up later is a new provider value plus a password column, with no change to
+  students or sessions. A first-time Google student gets a `LIVE_CHAT` contact, a NEW student with its
+  `LEAD_CREATED` history row, a first conversation and the identity in one transaction; the `STU-` id
+  goes through `withUniquePublicId` (its generator moved to `publicId.ts`, shared with Telegram).
+- **Separation:** student access tokens use their own `STUDENT_JWT_SECRET` (startup fails if it equals
+  `JWT_SECRET`), audience `smetase-student` and a pinned HS256, so they fail every staff route and
+  staff tokens fail `StudentAuthenticateMiddleware`, which sets `req.student` and never `req.auth`.
+  The refresh cookie `smetase_student_rt` is httpOnly, SameSite=Strict and path-scoped to
+  `/api/v1/student/auth`; only its SHA-256 hash is stored; it rotates on every refresh.
+- **Routes** (`/api/v1/student`): `POST /auth/google` (verifies the Google ID token against
+  `GOOGLE_CLIENT_ID` via `google-auth-library`; the client secret isn't used), `POST /auth/refresh`,
+  `POST /auth/logout` (cookie-based, idempotent), `GET /me`.
+- **App-wide:** CORS changed from `origin: true` (any site) to an allowlist of `FRONTEND_URL` and the new
+  `STUDENT_APP_URL`; `express-rate-limit` (installed, previously unused) on sign-in (20/15 min/IP) and
+  refresh (60/15 min/IP), returning 429 `RATE_LIMITED` in the standard envelope.
+- **Frontend (smetase-web):** Google's official button (Google Identity Services), an axios client with
+  one shared refresh on 401, and a Zustand session store (access token in memory only; the cookie
+  restores the session on reload). Journey, chat, matches and Parent Pack are still mock data (Stage 3).
+
+Tests: `studentToken.unit.test.ts` (round trip, wrong secret/audience, expiry, staff↔student rejection)
+and `student-auth.http.test.ts` (new vs returning student, unverified email, validation, refresh rotation
+and revoked session, logout, token separation both ways, CORS). 490/490 passing. Verified end to end with
+a real Google account: sign-in created STU-6377 + contact + identity + session, reload refreshed the
+session, sign-out revoked it.
+
+## Student portal: real profile, journey, matches and study plan (2026-09-28)
+
+BACKLOG #8, Stage 3 of the student web app. Everything in the app except the chat now comes from the
+backend.
+
+- **Data** (migration `*_add_student_choice`): `students.chosen_program_id` (FK programs, onDelete
+  SetNull) and `students.study_plan_shared_at` (first share). There was no "chosen programme" concept
+  before; a shortlist has no flag.
+- **Journey** (`studentPortal/studentJourney.ts`, pure): the furthest open application decides first
+  (DRAFT–SUBMITTED → APPLY, OFFER_RECEIVED → OFFER, VISA_PROCESSING/COMPLETED → VISA; rejected/withdrawn
+  ignored), then profile completeness (study level, destination, intake, budget, academic background,
+  English test), then shortlist/choice. ENGLISH and FUNDS aren't detectable yet (Stage 6).
+- **Routes** (`/api/v1/student`, student token only, scoped to the token's student): `GET /me` (moved
+  from studentAuth; adds profile, advisor `{ name, handling }`), `PATCH /me/profile` (Telegram codes, e.g.
+  MASTERS, UK), `GET /journey`, `GET /matches` (live `scoreProgram` over the same 300-candidate pool as
+  recommendation runs, nothing saved; top 10 plus anything shortlisted/chosen), `POST/DELETE
+  /shortlist/:programId`, `POST /choice`, `GET /study-plan`, `POST /study-plan/shared`. The staff
+  services aren't reused because of their ownership checks; the module calls the repositories.
+- **"Parent Pack" renamed "Study Plan"**: it's for anyone helping the student (parent, sponsor,
+  guardian). It shows only the programme's real tuition; living and visa costs aren't in our data and
+  aren't estimated.
+- **Scoring fix:** only an actual English result counts as evidence (`hasEnglishEvidence`: a number, or
+  WAEC), so "IELTS booked" or "Not taken yet" no longer earn the programme-fit points. Applies to staff
+  recommendation runs too.
+- **Frontend (smetase-web):** real `portalApi`; the chat stays scripted until Stage 4 but saves its
+  onboarding answers to the profile and only asks for missing fields (including a typed academic
+  background and an IELTS band follow-up); the "Demo data" badge is replaced by a "Scripted chat" tag.
+
+Tests: `studentJourney.unit.test.ts`, `student-portal.http.test.ts` (every route, validation, the
+top-10-plus-saved rule, tuition-only study plan, 401 for missing/staff tokens), English-evidence
+scorer tests. 541/541 passing. Verified with a real account: profile saved, real matches, shortlist and
+choice (MSc Economics) persisted.

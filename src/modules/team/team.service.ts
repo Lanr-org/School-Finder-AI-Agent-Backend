@@ -18,8 +18,27 @@ import { buildInviteEmail } from '../../integrations/email/email.templates'
 import env from '../../config/env'
 import EmailProvider from '../../integrations/email/email.provider'
 import { logger } from '../../config/logger'
+import { AuditService } from '../audit/audit.service'
+import { AUDIT_ACTIONS } from '../audit/audit.actions'
 
 const INVITATION_TTL_MINUTES = 60
+
+// Allowlisted audit snapshot of a team member — never password/token fields.
+const snapshotMember = (user: {
+  public_id: string
+  full_name: string
+  email: string
+  phone: string | null
+  role: string
+  status: string
+}) => ({
+  publicId: user.public_id,
+  fullName: user.full_name,
+  email: user.email,
+  phone: user.phone,
+  role: user.role,
+  status: user.status,
+})
 
 export class TeamService {
   // ── POST /team/invitations ─────────────────────────────────────────────────
@@ -58,7 +77,18 @@ export class TeamService {
     const rawToken = generateOpaqueToken()
     data.token_hash = hashOpaqueToken(rawToken)
 
-    const { user, invite } = await TeamRepo.CreateInviteUser(data)
+    const { user, invite } = await AuditService.withAudit(
+      (tx) => TeamRepo.CreateInviteUser(data, tx),
+      (created) => ({
+        action: AUDIT_ACTIONS.INVITATION_CREATED,
+        entityType: 'invitation',
+        entityId: created.user.public_id,
+        after: {
+          ...snapshotMember(created.user),
+          expiresAt: created.invite.expires_at,
+        },
+      }),
+    )
 
     const setUrl = new URL(`/set-password/${rawToken}`, env.frontendUrl).href
 
@@ -141,7 +171,18 @@ export class TeamService {
       count: invitation.send_count + 1,
     }
 
-    const updated = await TeamRepo.UpdateTeamInvitation(updateData)
+    const updated = await AuditService.withAudit(
+      (tx) => TeamRepo.UpdateTeamInvitation(updateData, tx),
+      (resent) => ({
+        action: AUDIT_ACTIONS.INVITATION_RESENT,
+        entityType: 'invitation',
+        entityId: invitation.user.public_id,
+        metadata: {
+          sendCount: updateData.count,
+          expiresAt: resent.expires_at,
+        },
+      }),
+    )
     const setUrl = new URL(`/set-password/${rawToken}`, env.frontendUrl).href
     const admin = await AuthRepo.findUser({ id: auth.sub })
 
@@ -205,7 +246,19 @@ export class TeamService {
       )
     }
 
-    await TeamRepo.CancelInvitation(invitation.id, invitation.user_id)
+    // Canceling hard-deletes the invited user, so the snapshot is taken from the
+    // row loaded above — the audit record is the only trace left of the invitee.
+    const invitee = snapshotMember(invitation.user)
+    await AuditService.withAudit(
+      (tx) =>
+        TeamRepo.CancelInvitation(invitation.id, invitation.user_id, tx),
+      () => ({
+        action: AUDIT_ACTIONS.INVITATION_CANCELED,
+        entityType: 'invitation',
+        entityId: invitee.publicId,
+        before: invitee,
+      }),
+    )
   }
 
   // ── GET /team ──────────────────────────────────────────────────────────────
@@ -253,7 +306,16 @@ export class TeamService {
       throw createError(`Can't edit an active user's email`, 400, {}, 'VALIDATION_ERROR')
     }
 
-    const updated = await TeamRepo.updateUser(user.id, data)
+    const updated = await AuditService.withAudit(
+      (tx) => TeamRepo.updateUser(user.id, data, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.MEMBER_UPDATED,
+        entityType: 'user',
+        entityId: user.public_id,
+        before: snapshotMember(user),
+        after: snapshotMember(after),
+      }),
+    )
 
     return {
       publicId: updated.public_id,
@@ -285,7 +347,16 @@ export class TeamService {
       )
     }
 
-    const updated = await TeamRepo.updateUserStatus(user.id, data.status)
+    const updated = await AuditService.withAudit(
+      (tx) => TeamRepo.updateUserStatus(user.id, data.status, tx),
+      (after) => ({
+        action: AUDIT_ACTIONS.MEMBER_STATUS_CHANGED,
+        entityType: 'user',
+        entityId: user.public_id,
+        before: { status: user.status },
+        after: { status: after.status },
+      }),
+    )
 
     return {
       publicId: updated.public_id,

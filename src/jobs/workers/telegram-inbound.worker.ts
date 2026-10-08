@@ -1,17 +1,20 @@
 import { Worker, Job } from 'bullmq'
 import env from '../../config/env.js'
 import { logger } from '../../config/logger.js'
+import { captureWorkerFailure } from '../../config/sentry.js'
 import { TelegramWebhookUpdate } from '../../integrations/telegram/schemas/telegram-webhook.schema.js'
 import { TelegramUserMapper } from '../../integrations/telegram/mappers/telegram-user.mapper.js'
 import { TelegramMessageMapper } from '../../integrations/telegram/mappers/telegram-message.mapper.js'
-import { TelegramCommandHandler } from '../../integrations/telegram/handlers/command.handler.js'
+import { LINK_REPLIES, TelegramCommandHandler } from '../../integrations/telegram/handlers/command.handler.js'
+import StudentLinkService from '../../modules/studentLink/studentLink.service.js'
 import { TelegramCallbackQueryHandler } from '../../integrations/telegram/handlers/callback-query.handler.js'
 import { ContactsService } from '../../modules/contacts/contacts.service.js'
 import { CentrifugoClient } from '../../integrations/centrifugo/services/centrifugo.client.js'
-import { ConversationsRepo } from '../../modules/conversations/conversations.repository.js'
-import { AIReplyService } from '../../modules/ai/ai-reply.service.js'
+import { StudentMessageService } from '../../modules/conversations/studentMessage.service.js'
 import { TelegramOutboundService } from '../../integrations/telegram/services/telegram-outbound.service.js'
-import { ConversationMode } from '../../generated/prisma/index.js'
+import { MessageChannel } from '../../generated/prisma/index.js'
+import { AiUsageService } from '../../modules/ai/aiUsage.service.js'
+import { TelegramInterviewHandler } from '../../integrations/telegram/handlers/interview.handler.js'
 
 const parseRedisUrl = (url: string) => {
   const parsed = new URL(url)
@@ -38,14 +41,36 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
       return
     }
 
+    // The bot only serves 1:1 chats for now (community-group support is BACKLOG #7e).
+    // In a group the chat id is shared, so processing would turn the whole group into
+    // one "student" and have the AI reply to every message.
+    if (messageDTO.isGroup) {
+      logger.info(
+        { updateId: update.update_id, chatId: messageDTO.externalChatId },
+        'Ignoring Telegram update from a non-private chat.'
+      )
+      return
+    }
+
+    // 0. Account linking ("/start link_<token>" from the web app) comes before resolving the
+    // student, so a new Telegram user who links never gets a throwaway student of their own.
+    const linkToken = TelegramCommandHandler.parseLinkToken(messageDTO.textContent)
+    if (linkToken) {
+      const { outcome } = await StudentLinkService.LinkTelegram(linkToken, contactDTO.providerUserId)
+      logger.info({ updateId: update.update_id, outcome }, 'Handled Telegram account link.')
+      await TelegramOutboundService.sendMessage(messageDTO.externalChatId, LINK_REPLIES[outcome])
+      return
+    }
+
     // 1. Resolve or Register Student in PostgreSQL Database
     const studentContext = await ContactsService.resolveTelegramContact(contactDTO)
 
-    // 2. Handle Bot Commands (e.g. /start, /help)
+    // 2. Handle Bot Commands (e.g. /start, /help, /plan)
     if (messageDTO.textContent && messageDTO.textContent.startsWith('/')) {
       const handled = await TelegramCommandHandler.handleCommand(
         messageDTO.externalChatId,
-        messageDTO.textContent
+        messageDTO.textContent,
+        studentContext.studentId
       )
       if (handled) return
     }
@@ -61,30 +86,34 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
     }
 
 
-    // 4. Generate and send an AI reply for free-text messages, but only while the
-    // conversation hasn't been escalated to a human advisor.
+    // 4. Save free-text messages. Unless an advisor has taken over, the AI reply is queued
+    // and sent to this chat by the ai-reply worker.
     if (messageDTO.textContent) {
-      const mode = await ConversationsRepo.findConversationMode(studentContext.conversationId)
-
-      if (mode === ConversationMode.AI_BOT) {
-        try {
-          const replyText = await AIReplyService.GenerateReply(
-            studentContext.conversationId,
-            studentContext.studentId,
-            messageDTO.textContent
-          )
-          await TelegramOutboundService.sendMessage(messageDTO.externalChatId, replyText)
-        } catch (error) {
-          logger.error(
-            { error: (error as Error).message, conversationId: studentContext.conversationId },
-            'AI reply generation failed.'
-          )
-          await TelegramOutboundService.sendMessage(
-            messageDTO.externalChatId,
-            "Sorry, I'm having trouble responding right now — please try again in a moment."
-          )
-        }
+      // A chat sending more than the per-minute allowance is dropped without a reply.
+      if (!(await AiUsageService.ConsumeTelegramMessage(messageDTO.externalChatId))) {
+        logger.warn(
+          { updateId: update.update_id, chatId: messageDTO.externalChatId },
+          'Telegram message dropped: per-minute limit exceeded.'
+        )
+        return
       }
+      // During a practice interview the text is the answer: it's graded and answered here,
+      // not saved to the conversation or sent to the normal AI chat.
+      if (
+        await TelegramInterviewHandler.handleText(
+          messageDTO.externalChatId,
+          studentContext.studentId,
+          messageDTO.textContent
+        )
+      ) {
+        return
+      }
+      await StudentMessageService.Receive({
+        conversationId: studentContext.conversationId,
+        studentId: studentContext.studentId,
+        text: messageDTO.textContent,
+        channel: MessageChannel.TELEGRAM,
+      })
     }
 
     // 5. Broadcast live event via Centrifugo to admin dashboard
@@ -97,6 +126,7 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
         providerUserId: contactDTO.providerUserId,
         firstName: contactDTO.firstName,
         text: messageDTO.textContent || messageDTO.callbackData,
+        channel: MessageChannel.TELEGRAM,
         chatId: messageDTO.externalChatId,
         isNewStudent: studentContext.isNewStudent,
       },
@@ -117,4 +147,5 @@ telegramInboundWorker.on('completed', (job) => {
 
 telegramInboundWorker.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, error: err.message }, 'Inbound Telegram update processing failed.')
+  captureWorkerFailure('telegram-inbound', job, err)
 })

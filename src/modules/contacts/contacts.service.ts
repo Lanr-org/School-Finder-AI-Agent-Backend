@@ -3,13 +3,9 @@ import { ProviderContactDTO } from '../../integrations/telegram/mappers/telegram
 import { ContactProvider } from '../../generated/prisma/index.js'
 import { ContactsRepo } from './contacts.repository.js'
 import { ResolvedStudentContext } from './contacts.types.js'
+import { createPublicStudentId } from '../../common/security/publicId.js'
 
 export class ContactsService {
-  private static generatePublicStudentId = (): string => {
-    const randomNum = Math.floor(1000 + Math.random() * 9000)
-    return `STU-${randomNum}`
-  }
-
   /**
    * Business Logic: Resolves a Telegram contact by coordinating repository queries.
    */
@@ -19,32 +15,20 @@ export class ContactsService {
     const providerType = ContactProvider.TELEGRAM
     const providerUserId = contactDTO.providerUserId
 
-    // 1. Search DB via Repository
-    const existingContact = await ContactsRepo.findContactWithActiveStudent(providerType, providerUserId)
+    // 1. Find the student through their Telegram identity (may be a linked web-born student).
+    const existing = await ContactsRepo.findStudentByTelegramId(providerUserId)
 
     // 2. Handle Existing Student
-    if (existingContact && existingContact.student) {
-      const activeConv = existingContact.student.conversations[0]
-
-      if (activeConv) {
-        return {
-          contactId: existingContact.id,
-          studentId: existingContact.student.id,
-          publicId: existingContact.student.public_id,
-          conversationId: activeConv.id,
-          isNewStudent: false,
-        }
-      }
-
-      // Create new conversation thread if previous was resolved
-      const newConv = await ContactsRepo.createStudentConversation(existingContact.student.id)
-
+    if (existing) {
+      // Create a new conversation thread if the previous one was resolved.
+      const conversationId =
+        existing.conversations[0]?.id ?? (await ContactsRepo.createStudentConversation(existing.id)).id
 
       return {
-        contactId: existingContact.id,
-        studentId: existingContact.student.id,
-        publicId: existingContact.student.public_id,
-        conversationId: newConv.id,
+        contactId: existing.contact_id,
+        studentId: existing.id,
+        publicId: existing.public_id,
+        conversationId,
         isNewStudent: false,
       }
     }
@@ -52,7 +36,7 @@ export class ContactsService {
     // 3. Handle New Student Registration via Repository
     logger.info({ providerUserId, name: contactDTO.firstName }, 'Registering new Student via Telegram.')
 
-    const publicId = ContactsService.generatePublicStudentId()
+    const publicId = createPublicStudentId()
 
     const created = await ContactsRepo.registerStudentWithContact({
       providerType,

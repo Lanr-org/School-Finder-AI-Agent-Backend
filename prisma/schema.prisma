@@ -43,17 +43,22 @@ model Users {
   auth_sessions         Auth_Sessions[]
   password_reset_tokens Password_Reset_Tokens[]
 
-
   // NEW
   invitations_received Team_Invitations[] @relation("InvitationRecipient")
   invitations_sent     Team_Invitations[] @relation("InvitationSender")
 
-  advisor_profile      AdvisorProfile?
-  authored_notes       StudentNote[]
-  authored_follow_ups  FollowUp[]
-  authored_bulletins   IndustryBulletin[]
-  authored_visa_rates  VisaSuccessRate[]
+  advisor_profile               AdvisorProfile?
+  authored_notes                StudentNote[]
+  authored_follow_ups           FollowUp[]
+  authored_bulletins            IndustryBulletin[]
+  authored_visa_rates           VisaSuccessRate[]
   generated_recommendation_runs RecommendationRun[]
+  created_applications          StudentApplication[]
+  application_status_changes    ApplicationStatusHistory[]
+  student_status_changes        StudentStatusHistory[]
+  audit_logs                    AuditLog[]
+  journey_checks                StudentJourneyCheck[]
+  notifications                 Notification[]
 
   @@map("users")
 }
@@ -95,25 +100,24 @@ model Password_Reset_Tokens {
   @@map("password_reset_tokens")
 }
 
-
 model Team_Invitations {
-  id                  String    @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  user_id             String    @db.Uuid
-  invited_by_user_id  String    @db.Uuid
+  user_id            String @db.Uuid
+  invited_by_user_id String @db.Uuid
 
-  token_hash          String    @unique @db.Char(64)
+  token_hash String @unique @db.Char(64)
 
-  expires_at          DateTime  @db.Timestamptz(6)
-  accepted_at         DateTime?
-  canceled_at         DateTime?
-  
-  sent_at             DateTime  @default(now()) @db.Timestamptz(6)
-  last_sent_at        DateTime  @default(now()) @db.Timestamptz(6)
-  send_count          Int       @default(1)
+  expires_at  DateTime  @db.Timestamptz(6)
+  accepted_at DateTime?
+  canceled_at DateTime?
+
+  sent_at      DateTime @default(now()) @db.Timestamptz(6)
+  last_sent_at DateTime @default(now()) @db.Timestamptz(6)
+  send_count   Int      @default(1)
 
   // The invited user
-  user Users @relation( "InvitationRecipient", fields: [user_id], references: [id], onDelete: Cascade)
+  user Users @relation("InvitationRecipient", fields: [user_id], references: [id], onDelete: Cascade)
 
   // The admin/staff who sent the invitation
   invited_by Users @relation("InvitationSender", fields: [invited_by_user_id], references: [id])
@@ -163,6 +167,11 @@ enum MessageSenderType {
   SYSTEM
 }
 
+enum MessageChannel {
+  TELEGRAM
+  WEB
+}
+
 // ==========================================
 // MODELS FOR CONTACTS, STUDENTS & CONVERSATIONS
 // ==========================================
@@ -193,27 +202,194 @@ model Student {
   assigned_advisor_id String?       @db.Uuid
   status              StudentStatus @default(NEW)
 
-  study_level         String?       @db.VarChar(50)
+  study_level         String?      @db.VarChar(50)
   target_destinations String[]
   target_intake_month IntakeMonth?
   target_intake_year  Int?
-  budget_range        String?       @db.VarChar(100)
-  academic_background String?       @db.Text
-  english_test_score  String?       @db.VarChar(100)
+  budget_range        String?      @db.VarChar(100)
+  academic_background String?      @db.Text
+  english_test_score  String?      @db.VarChar(100)
 
-  created_at          DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime      @updatedAt @db.Timestamptz(6)
+  // The one programme the student picked (web app), and the first time they shared their Study Plan.
+  chosen_program_id    String?   @db.Uuid
+  study_plan_shared_at DateTime? @db.Timestamptz(6)
 
-  contact       Contacts        @relation(fields: [contact_id], references: [id], onDelete: Cascade)
-  conversations Conversations[]
-  notes         StudentNote[]
-  follow_ups    FollowUp[]
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  contact              Contacts               @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  conversations        Conversations[]
+  notes                StudentNote[]
+  follow_ups           FollowUp[]
   recommendation_runs  RecommendationRun[]
   shortlisted_programs StudentShortlist[]
+  applications         StudentApplication[]
+  status_history       StudentStatusHistory[]
+  identities           StudentIdentity[]
+  sessions             StudentSession[]
+  link_tokens          StudentLinkToken[]
+  journey_checks       StudentJourneyCheck[]
+  study_plan_links     StudyPlanLink[]
+  interview_sessions   InterviewSession[]
+  // SetNull: deleting a programme clears the choice instead of blocking the delete.
+  chosen_program       Programs?              @relation("StudentChosenProgram", fields: [chosen_program_id], references: [id], onDelete: SetNull)
 
   @@index([assigned_advisor_id])
+  @@index([chosen_program_id])
   @@index([status, created_at(sort: Desc)])
   @@map("students")
+}
+
+enum InterviewType {
+  VISA
+  ADMISSION
+}
+
+enum InterviewStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// An AI mock interview. At most one IN_PROGRESS per student (partial unique index in the
+// migration). Country/programme are snapshots taken at start so history stays readable.
+model InterviewSession {
+  id             String          @id @default(uuid()) @db.Uuid
+  student_id     String          @db.Uuid
+  type           InterviewType
+  status         InterviewStatus @default(IN_PROGRESS)
+  channel        MessageChannel
+  target_country String?         @db.VarChar(100)
+  program_label  String?         @db.VarChar(255)
+  question_count Int             @default(5)
+  overall_score  Decimal?        @db.Decimal(5, 2)
+  summary        String?         @db.Text
+  strengths      Json?
+  improvements   Json?
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  completed_at   DateTime?       @db.Timestamptz(6)
+
+  student Student           @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  answers InterviewAnswer[]
+
+  @@index([student_id, status])
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("interview_sessions")
+}
+
+model InterviewAnswer {
+  id            String    @id @default(uuid()) @db.Uuid
+  session_id    String    @db.Uuid
+  idx           Int
+  question      String    @db.Text
+  answer        String?   @db.Text
+  tip           String?   @db.Text
+  sample_answer String?   @db.Text
+  score         Int?
+  answered_at   DateTime? @db.Timestamptz(6)
+
+  session InterviewSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, idx])
+  @@map("interview_answers")
+}
+
+enum StudentIdentityProvider {
+  GOOGLE
+  TELEGRAM
+}
+
+// How a student signs in or is reached. subject: Google `sub`, or the Telegram user id
+// (which is also the private chat id the bot sends to).
+model StudentIdentity {
+  id            String                  @id @default(uuid()) @db.Uuid
+  student_id    String                  @db.Uuid
+  provider      StudentIdentityProvider
+  subject       String                  @db.VarChar(255)
+  email         String?                 @db.VarChar(255) // lowercased; Telegram has none
+  created_at    DateTime                @default(now()) @db.Timestamptz(6)
+  last_login_at DateTime?               @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@unique([student_id, provider]) // one account of each kind per student
+  @@index([email])
+  @@map("student_identities")
+}
+
+// One-time, 15-minute tokens that link a Telegram account and a Google account to the
+// same student. Only the SHA-256 hash is stored.
+model StudentLinkToken {
+  id          String                  @id @default(uuid()) @db.Uuid
+  student_id  String                  @db.Uuid
+  token_hash  String                  @unique @db.VarChar(64)
+  redeem_with StudentIdentityProvider // the account type that can redeem it
+  expires_at  DateTime                @db.Timestamptz(6)
+  consumed_at DateTime?               @db.Timestamptz(6)
+  created_at  DateTime                @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("student_link_tokens")
+}
+
+// Journey steps the system can't detect from data. A row means done; unticking deletes it.
+enum JourneyCheckKey {
+  DEPOSIT_PAID
+  ENGLISH_TEST_BOOKED
+  ENGLISH_SCORE_RECEIVED
+  FUNDS_PLAN_AGREED
+  FUNDS_DOCUMENTS_READY
+}
+
+model StudentJourneyCheck {
+  student_id   String          @db.Uuid
+  key          JourneyCheckKey
+  done_at      DateTime        @default(now()) @db.Timestamptz(6)
+  done_by_user String?         @db.Uuid // staff user who ticked it; null = the student
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  done_by Users?  @relation(fields: [done_by_user], references: [id], onDelete: SetNull)
+
+  @@id([student_id, key])
+  @@index([done_by_user])
+  @@map("student_journey_checks")
+}
+
+// Public, read-only links to a student's Study Plan (for parents and sponsors).
+// Only the SHA-256 hash is stored; each share creates a new link.
+model StudyPlanLink {
+  id         String    @id @default(uuid()) @db.Uuid
+  student_id String    @db.Uuid
+  token_hash String    @unique @db.VarChar(64)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  revoked_at DateTime? @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("study_plan_links")
+}
+
+// Mirrors Auth_Sessions, but for students; kept separate so the two can never mix.
+model StudentSession {
+  id                 String    @id @default(uuid()) @db.Uuid
+  student_id         String    @db.Uuid
+  refresh_token_hash String    @unique @db.VarChar(64)
+  user_agent         String?
+  ip_address         String?   @db.Inet
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  last_used_at       DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@map("student_sessions")
 }
 
 model Conversations {
@@ -237,6 +413,7 @@ model ConversationMessages {
   id              String            @id @default(uuid()) @db.Uuid
   conversation_id String            @db.Uuid
   sender_type     MessageSenderType
+  channel         MessageChannel // where the message came from (student) or went to (AI/advisor)
   content         String            @db.Text
   metadata        Json?
   created_at      DateTime          @default(now()) @db.Timestamptz(6)
@@ -274,8 +451,8 @@ enum PartnerStatus {
 // ==========================================
 
 model Schools {
-  id         String @id @default(uuid()) @db.Uuid
-  public_id  String @unique @db.VarChar(24)
+  id        String @id @default(uuid()) @db.Uuid
+  public_id String @unique @db.VarChar(24)
 
   // Profile
   name          String             @db.VarChar(200)
@@ -284,23 +461,23 @@ model Schools {
   description   String?            @db.Text
 
   // Contact & website
-  website           String?  @db.VarChar(255)
-  admissions_email  String?  @db.VarChar(255)
-  phone_numbers     String[]
+  website          String?  @db.VarChar(255)
+  admissions_email String?  @db.VarChar(255)
+  phone_numbers    String[]
 
   // Location
-  street_address String?  @db.VarChar(255)
-  city           String   @db.VarChar(120)
-  country        String   @db.VarChar(120)
-  postal_code    String?  @db.VarChar(20)
+  street_address String? @db.VarChar(255)
+  city           String  @db.VarChar(120)
+  country        String  @db.VarChar(120)
+  postal_code    String? @db.VarChar(20)
 
   // Partnership & internal assessment
-  partner_status                PartnerStatus @default(PROSPECT)
-  visa_friendliness_score       Int?
-  visa_friendliness_notes       String?       @db.Text
-  admission_friendliness_score  Int?
-  admission_friendliness_notes  String?       @db.Text
-  ranking_reputation_notes      String?       @db.Text
+  partner_status               PartnerStatus @default(PROSPECT)
+  visa_friendliness_score      Int?
+  visa_friendliness_notes      String?       @db.Text
+  admission_friendliness_score Int?
+  admission_friendliness_notes String?       @db.Text
+  ranking_reputation_notes     String?       @db.Text
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -344,11 +521,11 @@ model Programs {
   public_id String @unique @db.VarChar(24)
 
   // Profile
-  name         String     @db.VarChar(200)
-  study_level  StudyLevel
-  qualification String    @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
-  category     String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
-  duration     String     @db.VarChar(50)  // e.g. "2 years", "18 months"
+  name          String     @db.VarChar(200)
+  study_level   StudyLevel
+  qualification String     @db.VarChar(100) // e.g. "MRes", "MBA", "BEng (Hons)", "Postgraduate Diploma"
+  category      String     @db.VarChar(120) // e.g. "Computer Science", "Business" — free text, not an enum
+  duration      String     @db.VarChar(50) // e.g. "2 years", "18 months"
 
   // School link
   school_id String  @db.Uuid
@@ -362,8 +539,10 @@ model Programs {
   // Intakes & deadlines
   intakes ProgramIntakes[]
 
-  recommendations Recommendation[]
-  shortlisted_by  StudentShortlist[]
+  recommendations    Recommendation[]
+  shortlisted_by     StudentShortlist[]
+  applications       StudentApplication[]
+  chosen_by_students Student[]            @relation("StudentChosenProgram")
 
   // Entry requirements
   academic_requirements String? @db.Text
@@ -439,11 +618,11 @@ model AdvisorProfile {
 }
 
 model StudentNote {
-  id         String  @id @default(uuid()) @db.Uuid
-  public_id  String  @unique @db.VarChar(24)
-  student_id String  @db.Uuid
-  advisor_id String  @db.Uuid
-  body       String  @db.Text
+  id         String @id @default(uuid()) @db.Uuid
+  public_id  String @unique @db.VarChar(24)
+  student_id String @db.Uuid
+  advisor_id String @db.Uuid
+  body       String @db.Text
 
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   updated_at DateTime  @updatedAt @db.Timestamptz(6)
@@ -592,8 +771,8 @@ model RecommendationRun {
   generated_by     String   @db.Uuid
   created_at       DateTime @default(now()) @db.Timestamptz(6)
 
-  student     Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  generator   Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
+  student         Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  generator       Users            @relation(fields: [generated_by], references: [id], onDelete: Restrict)
   recommendations Recommendation[]
 
   @@index([student_id, created_at(sort: Desc)])
@@ -633,4 +812,163 @@ model StudentShortlist {
 
   @@id([student_id, program_id])
   @@map("student_shortlists")
-}
+}
+
+// ==========================================
+// ENUMS FOR APPLICATIONS & STATUS HISTORY
+// ==========================================
+
+enum ApplicationStatus {
+  DRAFT
+  DOCUMENTS_PENDING
+  SUBMITTED
+  OFFER_RECEIVED
+  VISA_PROCESSING
+  COMPLETED
+  REJECTED
+  WITHDRAWN
+}
+
+// Why a student's status changed — lets the timeline say "moved to FOLLOW_UP
+// because a follow-up was scheduled" instead of just showing the new value.
+enum StudentStatusChangeSource {
+  LEAD_CREATED
+  MANUAL
+  ADVISOR_ASSIGNED
+  ADVISOR_UNASSIGNED
+  FOLLOW_UP_CREATED
+  APPLICATION_CREATED
+}
+
+// ==========================================
+// MODELS FOR APPLICATIONS & STATUS HISTORY
+// ==========================================
+
+// program_id is Restrict (not Cascade like shortlists/recommendations):
+// applications are operational history and must survive program changes.
+// "One open application per student+program" is enforced in the service,
+// not a partial unique index (no precedent for one in this schema).
+model StudentApplication {
+  id                 String            @id @default(uuid()) @db.Uuid
+  public_id          String            @unique @db.VarChar(24)
+  student_id         String            @db.Uuid
+  program_id         String            @db.Uuid
+  created_by         String            @db.Uuid
+  status             ApplicationStatus @default(DRAFT)
+  intake_month       IntakeMonth?
+  intake_year        Int?
+  external_reference String?           @db.VarChar(100) // school's own application number
+  notes              String?           @db.Text
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  student Student                    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  program Programs                   @relation(fields: [program_id], references: [id], onDelete: Restrict)
+  creator Users                      @relation(fields: [created_by], references: [id], onDelete: Restrict)
+  history ApplicationStatusHistory[]
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@index([status, updated_at(sort: Desc)])
+  @@index([program_id])
+  @@map("student_applications")
+}
+
+// Append-only. from_status is null for the initial DRAFT row written on create.
+model ApplicationStatusHistory {
+  id             String             @id @default(uuid()) @db.Uuid
+  application_id String             @db.Uuid
+  from_status    ApplicationStatus?
+  to_status      ApplicationStatus
+  changed_by     String?            @db.Uuid
+  note           String?            @db.Text
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+
+  application StudentApplication @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  changer     Users?             @relation(fields: [changed_by], references: [id], onDelete: Restrict)
+
+  @@index([application_id, created_at])
+  @@map("application_status_history")
+}
+
+// Append-only. changed_by is null for system changes (Telegram lead creation).
+// No backfill — rows start from this migration; earlier transitions were never recorded.
+model StudentStatusHistory {
+  id          String                    @id @default(uuid()) @db.Uuid
+  student_id  String                    @db.Uuid
+  from_status StudentStatus?
+  to_status   StudentStatus
+  source      StudentStatusChangeSource
+  changed_by  String?                   @db.Uuid
+  note        String?                   @db.Text // optional staff note; null for automatic changes
+  created_at  DateTime                  @default(now()) @db.Timestamptz(6)
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  changer Users?  @relation(fields: [changed_by], references: [id], onDelete: Restrict)
+
+  @@index([student_id, created_at(sort: Desc)])
+  @@map("student_status_history")
+}
+
+// ==========================================
+// AUDIT LOGS
+// ==========================================
+
+// Append-only record of who changed business data. The app only ever inserts
+// rows (no update/delete paths). entity_id is a public ID and deliberately not
+// an FK: e.g. canceling an invitation hard-deletes the invited user, and the
+// audit row (with its snapshot) must outlive it. action is a varchar backed by
+// the AUDIT_ACTIONS const rather than a DB enum, since the list grows.
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  actor_id    String?   @db.Uuid // null = system or unauthenticated (e.g. failed login)
+  actor_role  UserRole? // role at the time of the action
+  action      String    @db.VarChar(80)
+  entity_type String    @db.VarChar(40)
+  entity_id   String?   @db.VarChar(64)
+  before_data Json?
+  after_data  Json?
+  metadata    Json?
+  request_id  String?   @db.VarChar(64)
+  ip_address  String?   @db.VarChar(45)
+  user_agent  String?   @db.VarChar(255)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  actor Users? @relation(fields: [actor_id], references: [id], onDelete: Restrict)
+
+  @@index([created_at(sort: Desc)])
+  @@index([entity_type, entity_id, created_at(sort: Desc)])
+  @@index([actor_id, created_at(sort: Desc)])
+  @@index([action, created_at(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// NOTIFICATIONS
+// ==========================================
+
+enum NotificationType {
+  ASSIGNMENT
+  CONVERSATION
+  FOLLOW_UP
+  RECOMMENDATION
+  TEAM
+  SYSTEM
+}
+
+// In-app notifications for staff. link is a staff-app path (e.g. /conversations/CNV-1).
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  user_id    String           @db.Uuid
+  type       NotificationType
+  title      String           @db.VarChar(160)
+  body       String           @db.VarChar(500)
+  link       String?          @db.VarChar(255)
+  read_at    DateTime?        @db.Timestamptz(6)
+  created_at DateTime         @default(now()) @db.Timestamptz(6)
+
+  user Users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, read_at, created_at(sort: Desc)])
+  @@map("notifications")
+}

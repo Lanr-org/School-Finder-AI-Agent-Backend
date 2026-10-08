@@ -5,6 +5,8 @@ import { MatchingService } from '../src/modules/matching/matching.service'
 import { IndustryContextService } from '../src/modules/ai/industry-context.service'
 import { ConversationsRepo } from '../src/modules/conversations/conversations.repository'
 import { llmClient } from '../src/integrations/llm/index.js'
+import JourneyService from '../src/modules/studentPortal/studentJourney.service'
+import { deriveJourney } from '../src/modules/studentPortal/studentJourney'
 
 vi.mock('../src/modules/students/students.repository', () => ({
   StudentsRepo: {
@@ -37,6 +39,12 @@ vi.mock('../src/integrations/llm/index.js', () => ({
   },
 }))
 
+vi.mock('../src/modules/studentPortal/studentJourney.service', () => ({
+  default: { ForStudent: vi.fn() },
+}))
+
+const journeyMock = vi.mocked(JourneyService)
+
 const studentsRepoMock = vi.mocked(StudentsRepo)
 const matchingServiceMock = vi.mocked(MatchingService)
 const industryContextServiceMock = vi.mocked(IndustryContextService)
@@ -60,22 +68,63 @@ describe('AIReplyService.GenerateReply', () => {
       visaRates: [],
     })
     llmClientMock.generateReply.mockResolvedValue('AI reply text')
+    journeyMock.ForStudent.mockResolvedValue(null)
   })
 
-  it('persists the student message before doing anything else', async () => {
+  it("adds the student's journey: current stage, next step, what's left and what's done", async () => {
     studentsRepoMock.findStudentById.mockResolvedValue(makeStudent() as any)
-
-    await AIReplyService.GenerateReply(
-      'conv-1',
-      'student-uuid-1',
-      'Hello, I want to study abroad',
+    journeyMock.ForStudent.mockResolvedValue(
+      deriveJourney({
+        profile: {
+          studyLevel: 'MASTERS',
+          destinations: ['UK'],
+          intakeSet: true,
+          budgetRange: '£15k',
+          academicBackground: 'BSc',
+          englishTest: 'Not taken yet',
+        },
+        shortlistCount: 1,
+        hasChoice: true,
+        studyPlanShared: true,
+        applicationStatus: 'OFFER_RECEIVED',
+        advisorName: 'Amina Yusuf',
+        checks: new Set(['DEPOSIT_PAID', 'ENGLISH_TEST_BOOKED']),
+      }),
     )
 
-    expect(conversationsRepoMock.createMessage).toHaveBeenNthCalledWith(
-      1,
-      'conv-1',
+    await AIReplyService.GenerateReply('conv-1', 'student-uuid-1', 'WEB')
+
+    expect(journeyMock.ForStudent).toHaveBeenCalledWith('student-uuid-1')
+    const [, systemPromptArg] = llmClientMock.generateReply.mock.calls[0]!
+    expect(systemPromptArg).toContain("Student's journey:")
+    expect(systemPromptArg).toContain('Current stage: English test (owner: the student)')
+    expect(systemPromptArg).toContain('Next step: Waiting for your English score.')
+    expect(systemPromptArg).toContain('Still to do in this stage: Score received')
+    expect(systemPromptArg).toContain('Done so far: Your profile, Explore, Shortlist & choose, Apply, Offer & tuition')
+  })
+
+  it('still replies when the journey fails to load, and says it is unknown', async () => {
+    studentsRepoMock.findStudentById.mockResolvedValue(makeStudent() as any)
+    journeyMock.ForStudent.mockRejectedValue(new Error('db down'))
+
+    await AIReplyService.GenerateReply('conv-1', 'student-uuid-1', 'WEB')
+
+    const [, systemPromptArg] = llmClientMock.generateReply.mock.calls[0]!
+    expect(systemPromptArg).toContain('Journey not available')
+    expect(conversationsRepoMock.createMessage).toHaveBeenCalled()
+  })
+
+  it('does not save the student message (StudentMessageService already has)', async () => {
+    studentsRepoMock.findStudentById.mockResolvedValue(makeStudent() as any)
+
+    await AIReplyService.GenerateReply('conv-1', 'student-uuid-1', 'WEB')
+
+    expect(conversationsRepoMock.createMessage).toHaveBeenCalledTimes(1)
+    expect(conversationsRepoMock.createMessage).not.toHaveBeenCalledWith(
+      expect.anything(),
       'STUDENT',
-      'Hello, I want to study abroad',
+      expect.anything(),
+      expect.anything(),
     )
   })
 
@@ -83,7 +132,7 @@ describe('AIReplyService.GenerateReply', () => {
     studentsRepoMock.findStudentById.mockResolvedValue(null as any)
 
     await expect(
-      AIReplyService.GenerateReply('conv-1', 'missing-student', 'hi'),
+      AIReplyService.GenerateReply('conv-1', 'missing-student', 'WEB'),
     ).rejects.toMatchObject({
       statusCode: 404,
       code: 'NOT_FOUND',
@@ -106,7 +155,7 @@ describe('AIReplyService.GenerateReply', () => {
     await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'next message',
+      'WEB',
     )
 
     const [messagesArg] = llmClientMock.generateReply.mock.calls[0]!
@@ -147,7 +196,7 @@ describe('AIReplyService.GenerateReply', () => {
     await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'what are my options',
+      'WEB',
     )
 
     const [, systemPromptArg] = llmClientMock.generateReply.mock.calls[0]!
@@ -163,7 +212,7 @@ describe('AIReplyService.GenerateReply', () => {
     await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'what are my options',
+      'WEB',
     )
 
     const [, systemPromptArg] = llmClientMock.generateReply.mock.calls[0]!
@@ -212,7 +261,7 @@ describe('AIReplyService.GenerateReply', () => {
     await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'what are my visa chances',
+      'TELEGRAM',
     )
 
     expect(industryContextServiceMock.GetGroundingContext).toHaveBeenCalledWith(
@@ -236,7 +285,7 @@ describe('AIReplyService.GenerateReply', () => {
     await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'what are my options',
+      'WEB',
     )
 
     const [, systemPromptArg] = llmClientMock.generateReply.mock.calls[0]!
@@ -245,24 +294,26 @@ describe('AIReplyService.GenerateReply', () => {
     )
   })
 
-  it('persists the AI reply as an AGENT message and returns it', async () => {
+  it('saves the AI reply as an AGENT message on the given channel and returns it', async () => {
     studentsRepoMock.findStudentById.mockResolvedValue(makeStudent() as any)
     llmClientMock.generateReply.mockResolvedValue(
       'Here are some great options for you.',
     )
+    const saved = { id: 'msg-2', sender_type: 'AGENT', channel: 'TELEGRAM' }
+    conversationsRepoMock.createMessage.mockResolvedValue(saved as any)
 
     const result = await AIReplyService.GenerateReply(
       'conv-1',
       'student-uuid-1',
-      'hi',
+      'TELEGRAM',
     )
 
-    expect(result).toBe('Here are some great options for you.')
-    expect(conversationsRepoMock.createMessage).toHaveBeenNthCalledWith(
-      2,
+    expect(result).toBe(saved)
+    expect(conversationsRepoMock.createMessage).toHaveBeenCalledWith(
       'conv-1',
       'AGENT',
       'Here are some great options for you.',
+      'TELEGRAM',
     )
   })
 })
