@@ -70,7 +70,7 @@ services:
 
       # Where the two apps live. Must be https:// in production (the API refuses to start otherwise).
       - key: FRONTEND_URL
-        value: https://staff.smetase.com
+        value: https://hub.smetase.com
       - key: STUDENT_APP_URL
         value: https://app.smetase.com
 
@@ -132,5 +132,5 @@ services:
       - key: INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY
         value: "3"
 
-# The student app (app.smetase.com), staff app (staff.smetase.com) and landing page (smetase.com)
+# The student app (app.smetase.com), staff app (hub.smetase.com) and landing page (smetase.com)
 # are hosted on Cloudflare Pages, not here. See DEPLOY.md.

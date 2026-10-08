@@ -11,8 +11,8 @@ you can make; the rest is in the repo.
 | PostgreSQL | Render Postgres | private network |
 | Redis (queues, rate counters) | Render Key Value | private network |
 | Student app (`smetase-web`) | Cloudflare Pages | `https://app.smetase.com` |
-| Staff app (dashboard repo) | Cloudflare Pages | `https://staff.smetase.com` |
-| Landing page (`smetase-landing`) | Cloudflare Pages | `https://smetase.com` (+ `www`) |
+| Staff app (dashboard repo) | Cloudflare Pages | `https://hub.smetase.com` |
+| Landing page (`Lanr-org/smetase.com`) | Cloudflare Pages | `https://smetase.com` (+ `www`) |
 
 The three hostnames must share one registrable domain: the login cookies are `SameSite=strict`, and
 `*.onrender.com` addresses count as different sites, so login would silently fail on them.
@@ -58,8 +58,8 @@ Cloudflare dashboard, Workers & Pages, Create, Pages, **Connect to Git**. One pr
 | Project | Repo, branch | Build command | Output | Variables | Custom domain |
 |---|---|---|---|---|---|
 | `smetase-web` | `smetase-web`, `main` | `npm run build` | `dist` | `NODE_VERSION=22`, `VITE_API_URL=https://api.smetase.com/api/v1`, `VITE_GOOGLE_CLIENT_ID` | `app.smetase.com` |
-| `smetase-staff` | `School-Finder-AI-Agent-Dashboard`, `main` | `npm run build` | `dist` | `NODE_VERSION=22`, `VITE_API_URL=https://api.smetase.com/api/v1` | `staff.smetase.com` |
-| `smetase-landing` | `smetase-landing`, `main` | `npm run build` | `dist` | `NODE_VERSION=22` | `smetase.com`, `www.smetase.com` |
+| `smetase-staff` | `School-Finder-AI-Agent-Dashboard`, `main` | `npm run build` | `dist` | `NODE_VERSION=22`, `VITE_API_URL=https://api.smetase.com/api/v1` | `hub.smetase.com` |
+| `smetase-landing` | `smetase.com`, `main` | `npm run build` | `dist` | `NODE_VERSION=22` | `smetase.com`, `www.smetase.com` |
 
 - Add each custom domain in the project's Custom domains tab; Pages creates the DNS record itself.
 - `VITE_*` values are baked in at build time: change one, then redeploy.
@@ -78,7 +78,7 @@ On the API service, open the Shell tab and run (once):
     BOOTSTRAP_ADMIN_PASSWORD='a-strong-password-12+' npm run bootstrap:admin -- --email you@smetase.com --name "Your Name"
 
 It creates the admin and the baseline setting groups and recommendation weights, and refuses to run if an
-admin already exists. Then sign in at `https://staff.smetase.com`, change the password, and invite the team.
+admin already exists. Then sign in at `https://hub.smetase.com`, change the password, and invite the team.
 
 ## Smoke test, in this order
 
