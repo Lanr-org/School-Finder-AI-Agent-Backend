@@ -24,6 +24,7 @@ vi.mock('../src/modules/schools/schools.repository', () => ({
     listSchools: vi.fn(),
     updateSchool: vi.fn(),
     softDeleteSchool: vi.fn(),
+    findActiveDuplicate: vi.fn(),
   },
 }))
 
@@ -118,6 +119,8 @@ const makeSchool = (overrides: Record<string, unknown> = {}) => ({
   visa_sponsor_status: 'UNKNOWN' as const,
   visa_sponsor_source: null as string | null,
   visa_sponsor_checked_at: null as Date | null,
+  visa_sponsor_register_name: null as string | null,
+  visa_sponsor_note: null as string | null,
 
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
@@ -143,6 +146,19 @@ describe('Schools API — POST /api/v1/schools', () => {
     vi.clearAllMocks()
     authRepoMock.findUser.mockResolvedValue(makeAdminUser())
     authRepoMock.findAuthSessionById.mockResolvedValue(makeSession())
+  })
+
+  it('returns 409 when the same school already exists in that city', async () => {
+    schoolsRepoMock.findActiveDuplicate.mockResolvedValueOnce({ public_id: 'SCH-7903' })
+
+    const res = await request(app)
+      .post('/api/v1/schools')
+      .set('Authorization', `Bearer ${makeAdminToken()}`)
+      .send(validCreatePayload)
+
+    expect(res.status).toBe(409)
+    expect(body(res).error?.code).toBe('CONFLICT')
+    expect(schoolsRepoMock.createSchool).not.toHaveBeenCalled()
   })
 
   it('returns 201 and the created school on success', async () => {

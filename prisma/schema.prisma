@@ -491,9 +491,11 @@ model Schools {
   ranking_reputation_notes     String?       @db.Text
 
   // Official visa-sponsor register check, refreshed by the register import job
-  visa_sponsor_status     VisaSponsorStatus @default(UNKNOWN)
-  visa_sponsor_source     String?           @db.VarChar(120) // e.g. "UK Home Office register of licensed student sponsors"
-  visa_sponsor_checked_at DateTime?         @db.Timestamptz(6)
+  visa_sponsor_status        VisaSponsorStatus @default(UNKNOWN)
+  visa_sponsor_source        String?           @db.VarChar(120) // e.g. "UK Home Office register of licensed student sponsors"
+  visa_sponsor_checked_at    DateTime?         @db.Timestamptz(6)
+  visa_sponsor_register_name String?           @db.VarChar(200) // the legal name it matched, e.g. "University of Hertfordshire Higher Education Corporation"
+  visa_sponsor_note          String?           @db.VarChar(200) // register status, e.g. "Probationary Sponsor · Subject To Action Plan"
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)

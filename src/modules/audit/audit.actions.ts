@@ -25,6 +25,7 @@ export const AUDIT_ACTIONS = {
   SCHOOL_CREATED: 'school.created',
   SCHOOL_UPDATED: 'school.updated',
   SCHOOL_DEACTIVATED: 'school.deactivated',
+  SCHOOL_SPONSOR_STATUS_CHANGED: 'school.sponsor_status_changed',
   PROGRAM_CREATED: 'program.created',
   PROGRAM_UPDATED: 'program.updated',
   PROGRAM_VERIFIED: 'program.verified',

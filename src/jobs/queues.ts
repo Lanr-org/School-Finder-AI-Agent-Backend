@@ -64,3 +64,25 @@ export const telegramOutboundQueue = new Queue('telegram-outbound', {
     removeOnFail: 100,
   },
 })
+
+/**
+ * Daily check of every UK school against the Home Office register of licensed student sponsors.
+ * Failures retry; the next day's run catches up anyway.
+ */
+export const sponsorRegisterQueue = new Queue('sponsor-register', {
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 60_000 },
+    removeOnComplete: 30,
+    removeOnFail: 30,
+  },
+})
+
+// Idempotent: re-registering on every start just updates the one schedule.
+export const scheduleSponsorRegisterSync = () =>
+  sponsorRegisterQueue.upsertJobScheduler(
+    'daily-uk-sponsor-register',
+    { pattern: '0 6 * * *', tz: 'Europe/London' },
+    { name: 'sync-uk' },
+  )

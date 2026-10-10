@@ -1,5 +1,5 @@
 import prisma from '../../database/prisma.js'
-import type { Prisma } from '../../generated/prisma/index.js'
+import type { Prisma, VisaSponsorStatus } from '../../generated/prisma/index.js'
 import type { Db } from '../../database/transaction.js'
 import type { CreateSchoolDTO, ListSchoolsQueryDTO, UpdateSchoolDTO } from './schools.types.js'
 
@@ -93,6 +93,58 @@ export class SchoolsRepo {
     return db.schools.update({
       where: { id },
       data: { record_status: 'INACTIVE' },
+    })
+  }
+
+  // Duplicate guard: same name in the same city and country, ignoring case and spacing.
+  static findActiveDuplicate = async (name: string, city: string, country: string) => {
+    return prisma.schools.findFirst({
+      where: {
+        record_status: 'ACTIVE',
+        name: { equals: name.trim(), mode: 'insensitive' },
+        city: { equals: city.trim(), mode: 'insensitive' },
+        country: { equals: country.trim(), mode: 'insensitive' },
+      },
+      select: { public_id: true },
+    })
+  }
+
+  // ── Visa-sponsor register sync ──────────────────────────────────────────
+  static listSchoolsForSponsorCheck = async () => {
+    return prisma.schools.findMany({
+      select: {
+        id: true,
+        public_id: true,
+        name: true,
+        city: true,
+        country: true,
+        visa_sponsor_status: true,
+        visa_sponsor_register_name: true,
+        visa_sponsor_note: true,
+      },
+    })
+  }
+
+  static setSponsorCheck = async (
+    id: string,
+    data: {
+      status: VisaSponsorStatus
+      source: string
+      registerName: string | null
+      note: string | null
+      checkedAt: Date
+    },
+    db: Db = prisma,
+  ) => {
+    return db.schools.update({
+      where: { id },
+      data: {
+        visa_sponsor_status: data.status,
+        visa_sponsor_source: data.source,
+        visa_sponsor_register_name: data.registerName,
+        visa_sponsor_note: data.note,
+        visa_sponsor_checked_at: data.checkedAt,
+      },
     })
   }
 }

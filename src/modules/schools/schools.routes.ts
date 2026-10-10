@@ -27,6 +27,9 @@ schoolsRouter.post(
   SchoolsController.CreateSchool,
 )
 
+// Runs daily on its own; this is "check now" (also after adding UK schools). Declared before /:schoolId.
+schoolsRouter.post('/sponsor-register/sync', canManageSchools, SchoolsController.SyncSponsorRegister)
+
 schoolsRouter.get(
   '/:schoolId',
   validateParams(SchoolsSchemas.schoolIdParamsSchema),
