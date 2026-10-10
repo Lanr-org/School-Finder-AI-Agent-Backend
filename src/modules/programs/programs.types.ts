@@ -1,4 +1,9 @@
-import type { IntakeMonth, StudyLevel } from '../../generated/prisma/index.js'
+import type {
+  IntakeMonth,
+  ProgramDataReportStatus,
+  ProgramVerificationStatus,
+  StudyLevel,
+} from '../../generated/prisma/index.js'
 
 export interface ProgramIntakeDTO {
   month: IntakeMonth
@@ -20,6 +25,9 @@ export interface CreateProgramDTO {
   academicRequirements?: string | null
   englishRequirements?: string | null
   operationNotes?: string | null
+  sourceUrl?: string | null
+  feesAcademicYear?: string | null
+  evidence?: Record<string, string> | null
 }
 
 export interface UpdateProgramDTO {
@@ -36,10 +44,14 @@ export interface UpdateProgramDTO {
   academicRequirements?: string | null
   englishRequirements?: string | null
   operationNotes?: string | null
+  sourceUrl?: string | null
+  feesAcademicYear?: string | null
+  evidence?: Record<string, string> | null
 }
 
 export interface ListProgramsQueryDTO {
   schoolId?: string // public school ID filter, e.g. SCH-1001
+  verificationStatus?: ProgramVerificationStatus
   studyLevel?: StudyLevel
   category?: string
   search?: string
@@ -50,9 +62,16 @@ export interface ListProgramsQueryDTO {
 // Repository-level filters use the resolved internal school UUID rather than the public ID.
 export interface ListProgramsFilters {
   schoolId?: string | undefined
+  verificationStatus?: ProgramVerificationStatus | undefined
   studyLevel?: StudyLevel | undefined
   category?: string | undefined
   search?: string | undefined
+  page: number
+  limit: number
+}
+
+export interface ListReportsQueryDTO {
+  status: ProgramDataReportStatus
   page: number
   limit: number
 }

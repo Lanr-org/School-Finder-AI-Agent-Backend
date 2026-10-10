@@ -6,7 +6,10 @@ import { openApiDocument } from '../src/docs/document'
 import { authRouter } from '../src/modules/auth/auth.routes'
 import { teamRouter } from '../src/modules/team/team.routes'
 import { schoolsRouter } from '../src/modules/schools/schools.routes'
-import { programsRouter } from '../src/modules/programs/programs.routes'
+import {
+  programReportsRouter,
+  programsRouter,
+} from '../src/modules/programs/programs.routes'
 import { studentsRouter } from '../src/modules/students/students.routes'
 import { advisorsRouter } from '../src/modules/advisors/advisors.routes'
 import { settingsRouter } from '../src/modules/settings/settings.routes'
@@ -37,6 +40,7 @@ const MOUNTS: [prefix: string, router: Router][] = [
   ['/api/v1/team', teamRouter],
   ['/api/v1/schools', schoolsRouter],
   ['/api/v1/programs', programsRouter],
+  ['/api/v1/program-reports', programReportsRouter],
   ['/api/v1/students', studentsRouter],
   ['/api/v1/advisors', advisorsRouter],
   ['/api/v1/settings', settingsRouter],

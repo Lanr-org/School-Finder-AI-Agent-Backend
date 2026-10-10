@@ -32,8 +32,13 @@ export class MatchingService {
         ? student.target_destinations.map(normalizeCountry)
         : undefined
 
+    const verifiedOnly = await MatchingRepo.studentFacingVerifiedOnly()
     const [candidates, { weights }] = await Promise.all([
-      MatchingRepo.findMatchingPrograms({ countries, poolCap: POOL_CAP }),
+      MatchingRepo.findMatchingPrograms({
+        countries,
+        poolCap: POOL_CAP,
+        verifiedOnly,
+      }),
       RecommendationsRepo.getCurrentWeights(),
     ])
 
@@ -59,6 +64,9 @@ export class MatchingService {
       category: program.category,
       tuitionAmount: Number(program.tuition_amount),
       tuitionCurrency: program.tuition_currency,
+      feesAcademicYear: program.fees_academic_year,
+      verifiedAt:
+        program.verification_status === 'VERIFIED' ? program.verified_at : null,
       intakes: program.intakes.map((intake) => ({
         month: intake.month,
         year: intake.year,

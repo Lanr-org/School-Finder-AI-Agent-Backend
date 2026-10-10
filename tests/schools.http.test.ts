@@ -115,6 +115,10 @@ const makeSchool = (overrides: Record<string, unknown> = {}) => ({
     | string
     | null,
 
+  visa_sponsor_status: 'UNKNOWN' as const,
+  visa_sponsor_source: null as string | null,
+  visa_sponsor_checked_at: null as Date | null,
+
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
   ...overrides,

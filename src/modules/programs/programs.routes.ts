@@ -39,3 +39,35 @@ programsRouter.patch(
   validate(ProgramsSchemas.updateProgramSchema),
   ProgramsController.UpdateProgram,
 )
+
+programsRouter.post(
+  '/:programId/verify',
+  canManagePrograms,
+  validateParams(ProgramsSchemas.programIdParamsSchema),
+  ProgramsController.VerifyProgram,
+)
+
+// Any signed-in staff member, advisors included: they are the ones who notice stale data.
+programsRouter.post(
+  '/:programId/reports',
+  validateParams(ProgramsSchemas.programIdParamsSchema),
+  validate(ProgramsSchemas.createReportSchema),
+  ProgramsController.ReportOutdated,
+)
+
+// ── /program-reports ─────────────────────────────────────────────────────────
+export const programReportsRouter: Router = express.Router()
+
+programReportsRouter.use(AuthenticateMiddleware, canManagePrograms)
+
+programReportsRouter.get(
+  '/',
+  validateQuery(ProgramsSchemas.listReportsQuerySchema),
+  ProgramsController.ListReports,
+)
+
+programReportsRouter.post(
+  '/:reportId/resolve',
+  validateParams(ProgramsSchemas.reportIdParamsSchema),
+  ProgramsController.ResolveReport,
+)

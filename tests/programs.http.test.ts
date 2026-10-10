@@ -115,6 +115,10 @@ const makeSchool = (overrides: Record<string, unknown> = {}) => ({
   admission_friendliness_notes: null as string | null,
   ranking_reputation_notes: null as string | null,
 
+  visa_sponsor_status: 'UNKNOWN' as const,
+  visa_sponsor_source: null as string | null,
+  visa_sponsor_checked_at: null as Date | null,
+
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
   ...overrides,
@@ -161,6 +165,15 @@ const makeProgram = (overrides: Record<string, unknown> = {}) => ({
   academic_requirements: "Bachelor's degree with 3.0 GPA" as string | null,
   english_requirements: 'IELTS 6.5 overall' as string | null,
   operation_notes: 'Popular program, fills quickly.' as string | null,
+
+  source_url: null as string | null,
+  fees_academic_year: null as string | null,
+  verification_status: 'UNVERIFIED' as 'UNVERIFIED' | 'VERIFIED' | 'NEEDS_RECHECK',
+  verified_at: null as Date | null,
+  verified_by_id: null as string | null,
+  verified_by: null as { public_id: string; full_name: string } | null,
+  evidence: null as Record<string, string> | null,
+  last_checked_at: null as Date | null,
 
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
@@ -476,6 +489,7 @@ describe('Programs API — PATCH /api/v1/programs/:programId', () => {
       'program-uuid-0001',
       undefined,
       expect.objectContaining({ duration: '2 years' }),
+      undefined,
       expect.anything(),
     )
   })
@@ -497,6 +511,7 @@ describe('Programs API — PATCH /api/v1/programs/:programId', () => {
       'program-uuid-0001',
       'school-uuid-0002',
       expect.objectContaining({ schoolId: 'SCH-2002' }),
+      undefined,
       expect.anything(),
     )
   })

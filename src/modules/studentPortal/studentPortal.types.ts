@@ -87,6 +87,8 @@ export type ProgrammeMatch = {
   duration: string
   intakes: string[]
   tuition: Money
+  feesAcademicYear: string | null
+  verifiedAt: string | null // ISO date a person checked the fees against the official page
   scores: {
     overall: number
     programmeFit: number

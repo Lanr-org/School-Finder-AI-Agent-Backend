@@ -23,6 +23,17 @@ const schoolIdSchema = z
   .trim()
   .regex(/^SCH-\d{4}$/, 'Must be a valid school ID (e.g. SCH-1234)')
 
+export const verificationStatusEnum = z.enum(['UNVERIFIED', 'VERIFIED', 'NEEDS_RECHECK'])
+export const reportStatusEnum = z.enum(['OPEN', 'RESOLVED'])
+
+// The university's own course page; the proof behind every fee and requirement.
+const sourceUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .url('Must be a full link, e.g. https://www.manchester.ac.uk/study/...')
+  .refine((url) => url.startsWith('https://'), 'Must be an https:// link')
+
 const programIntakeSchema = z.object({
   month: intakeMonthEnum,
   year: z.number().int().min(2000).max(2100),
@@ -54,6 +65,16 @@ export class ProgramsSchemas {
     academicRequirements: z.string().trim().max(5000).nullable().optional(),
     englishRequirements: z.string().trim().max(5000).nullable().optional(),
     operationNotes: z.string().trim().max(5000).nullable().optional(),
+
+    sourceUrl: sourceUrlSchema.nullable().optional(),
+    feesAcademicYear: z
+      .string()
+      .trim()
+      .regex(/^\d{4}\/\d{2}$/, 'Use the academic year format, e.g. 2026/27')
+      .nullable()
+      .optional(),
+    // { fieldName: "exact quote from the source page" }, filled by the link-extraction flow.
+    evidence: z.record(z.string().max(60), z.string().max(2000)).nullable().optional(),
   })
 
   static updateProgramSchema = ProgramsSchemas.createProgramSchema.partial().refine(
@@ -63,9 +84,28 @@ export class ProgramsSchemas {
 
   static listProgramsQuerySchema = z.object({
     schoolId: schoolIdSchema.optional(),
+    verificationStatus: verificationStatusEnum.optional(),
     studyLevel: studyLevelEnum.optional(),
     category: z.string().trim().min(1).optional(),
     search: z.string().trim().min(1).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+
+  static createReportSchema = z.object({
+    message: z
+      .string()
+      .trim()
+      .min(5, 'Say what looks wrong, e.g. "Tuition is now £31,000 for 2027/28"')
+      .max(2000),
+  })
+
+  static reportIdParamsSchema = z.object({
+    reportId: z.string().uuid('Must be a valid report ID'),
+  })
+
+  static listReportsQuerySchema = z.object({
+    status: reportStatusEnum.default('OPEN'),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   })

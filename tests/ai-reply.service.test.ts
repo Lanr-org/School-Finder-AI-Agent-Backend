@@ -177,6 +177,8 @@ describe('AIReplyService.GenerateReply', () => {
         category: 'Psychology',
         tuitionAmount: 15973,
         tuitionCurrency: 'GBP',
+        feesAcademicYear: null,
+        verifiedAt: null,
         intakes: [
           {
             month: 'SEPTEMBER',

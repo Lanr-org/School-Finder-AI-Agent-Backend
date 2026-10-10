@@ -8,6 +8,7 @@ import { RecommendationsRepo } from '../src/modules/recommendations/recommendati
 vi.mock('../src/modules/matching/matching.repository', () => ({
   MatchingRepo: {
     findMatchingPrograms: vi.fn(),
+    studentFacingVerifiedOnly: vi.fn().mockResolvedValue(false),
   },
 }))
 
@@ -157,6 +158,8 @@ describe('MatchingService.FindMatchesForStudent', () => {
         category: 'Psychology',
         tuitionAmount: 15973,
         tuitionCurrency: 'GBP',
+        feesAcademicYear: undefined,
+        verifiedAt: null,
         intakes: [
           {
             month: 'SEPTEMBER',

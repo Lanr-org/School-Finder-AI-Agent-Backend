@@ -1,8 +1,17 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
-import { ProgramsSchemas } from './programs.schemas'
+import {
+  ProgramsSchemas,
+  reportStatusEnum,
+  verificationStatusEnum,
+} from './programs.schemas'
 import type { SchoolsSchemas } from '../schools/schools.schemas'
-import { errorResponseSchema } from '../../docs/registry'
+import {
+  errorContent,
+  errorResponseSchema,
+  staffRefSchema,
+  successEnvelope,
+} from '../../docs/registry'
 
 export const registerProgramsDocs = (
   registry: OpenAPIRegistry,
@@ -53,9 +62,52 @@ export const registerProgramsDocs = (
     englishRequirements: z.string().nullable(),
     operationNotes: z.string().nullable(),
 
+    sourceUrl: z.string().nullable(),
+    feesAcademicYear: z.string().nullable(),
+    verificationStatus: verificationStatusEnum,
+    verifiedAt: z.date().nullable(),
+    verifiedBy: staffRefSchema.nullable(),
+    evidence: z.record(z.string(), z.string()).nullable(),
+    lastCheckedAt: z.date().nullable(),
+
     createdAt: z.date(),
     updatedAt: z.date(),
   })
+
+  const reportDataSchema = z.object({
+    id: z.string().uuid(),
+    program: z.object({
+      publicId: z.string(),
+      name: z.string(),
+      schoolName: z.string(),
+    }),
+    message: z.string(),
+    status: reportStatusEnum,
+    reportedBy: staffRefSchema,
+    resolvedBy: staffRefSchema.nullable(),
+    createdAt: z.date(),
+    resolvedAt: z.date().nullable(),
+  })
+
+  const reportResponseSchema = registry.register(
+    'ProgramDataReportResponse',
+    successEnvelope(reportDataSchema),
+  )
+
+  const reportListResponseSchema = registry.register(
+    'ProgramDataReportListResponse',
+    successEnvelope(
+      z.object({
+        reports: z.array(reportDataSchema),
+        pagination: z.object({
+          page: z.number(),
+          limit: z.number(),
+          total: z.number(),
+          totalPages: z.number(),
+        }),
+      }),
+    ),
+  )
 
   const programResponseSchema = registry.register(
     'ProgramResponse',
@@ -269,6 +321,112 @@ export const registerProgramsDocs = (
         description: 'School not found.',
         content: { 'application/json': { schema: errorResponseSchema } },
       },
+    },
+  })
+
+  const registeredCreateReportSchema = registry.register(
+    'CreateProgramDataReportRequest',
+    ProgramsSchemas.createReportSchema,
+  )
+  const registeredReportIdParamsSchema = registry.register(
+    'ProgramDataReportIdParams',
+    ProgramsSchemas.reportIdParamsSchema,
+  )
+  const registeredListReportsQuerySchema = registry.register(
+    'ListProgramDataReportsQuery',
+    ProgramsSchemas.listReportsQuerySchema,
+  )
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/{programId}/verify',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Mark a program verified',
+    description:
+      'ADMIN or OPERATIONS. Records that a person checked every fee and requirement against the official course page today. Requires sourceUrl to be set. Any later edit to a fact field drops the program back to UNVERIFIED.',
+    request: { params: registeredProgramIdParamsSchema },
+    responses: {
+      200: {
+        description: 'Program marked verified.',
+        content: { 'application/json': { schema: programResponseSchema } },
+      },
+      400: errorContent(
+        'programId is malformed, or the program has no sourceUrl yet.',
+      ),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may verify programs.'),
+      404: errorContent('Program not found.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/{programId}/reports',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Report outdated program data',
+    description:
+      'Any signed-in staff member. Files a report for ADMIN/OPERATIONS to check; a VERIFIED program becomes NEEDS_RECHECK.',
+    request: {
+      params: registeredProgramIdParamsSchema,
+      body: {
+        required: true,
+        content: {
+          'application/json': { schema: registeredCreateReportSchema },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: 'Report filed.',
+        content: { 'application/json': { schema: reportResponseSchema } },
+      },
+      400: errorContent('Request validation failed.'),
+      401: errorContent('Bearer token is missing or invalid.'),
+      404: errorContent('Program not found.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/program-reports',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'List outdated-data reports',
+    description:
+      'ADMIN or OPERATIONS. Paginated, newest first; status defaults to OPEN.',
+    request: { query: registeredListReportsQuerySchema },
+    responses: {
+      200: {
+        description: 'Reports retrieved successfully.',
+        content: { 'application/json': { schema: reportListResponseSchema } },
+      },
+      400: errorContent('Query parameter validation failed.'),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may list reports.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/program-reports/{reportId}/resolve',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Resolve an outdated-data report',
+    description:
+      'ADMIN or OPERATIONS. Closes the report. It does not re-verify the program; use the verify endpoint after fixing the data.',
+    request: { params: registeredReportIdParamsSchema },
+    responses: {
+      200: {
+        description: 'Report resolved.',
+        content: { 'application/json': { schema: reportResponseSchema } },
+      },
+      400: errorContent('reportId is malformed.'),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may resolve reports.'),
+      404: errorContent('Report not found.'),
+      409: errorContent('The report is already resolved.'),
     },
   })
 }

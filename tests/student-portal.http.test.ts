@@ -49,7 +49,10 @@ vi.mock('../src/modules/recommendations/recommendations.repository', () => ({
   },
 }))
 vi.mock('../src/modules/matching/matching.repository', () => ({
-  MatchingRepo: { findMatchingPrograms: vi.fn() },
+  MatchingRepo: {
+    findMatchingPrograms: vi.fn(),
+    studentFacingVerifiedOnly: vi.fn().mockResolvedValue(false),
+  },
 }))
 vi.mock('../src/modules/visaRates/visaRates.repository', () => ({
   VisaRatesRepo: { findLatestActiveForCountries: vi.fn() },
@@ -271,7 +274,11 @@ describe('GET /api/v1/student/matches', () => {
       level: 'Postgraduate',
       country: 'United Kingdom',
     })
-    expect(matchingRepo.findMatchingPrograms).toHaveBeenCalledWith({ countries: ['United Kingdom'], poolCap: 300 })
+    expect(matchingRepo.findMatchingPrograms).toHaveBeenCalledWith({
+      countries: ['United Kingdom'],
+      poolCap: 300,
+      verifiedOnly: false,
+    })
   })
 })
 

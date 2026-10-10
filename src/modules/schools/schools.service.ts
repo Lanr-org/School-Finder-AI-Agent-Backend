@@ -29,6 +29,11 @@ const toSchoolResponse = (school: Schools) => ({
   admissionFriendlinessNotes: school.admission_friendliness_notes,
   rankingReputationNotes: school.ranking_reputation_notes,
 
+  // Read-only: set by the official-register import, never by the client.
+  visaSponsorStatus: school.visa_sponsor_status,
+  visaSponsorSource: school.visa_sponsor_source,
+  visaSponsorCheckedAt: school.visa_sponsor_checked_at,
+
   createdAt: school.created_at,
   updatedAt: school.updated_at,
 })

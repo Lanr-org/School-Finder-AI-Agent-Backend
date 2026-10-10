@@ -117,6 +117,11 @@ const toProgrammeMatch = (
       .sort((a, b) => a.year - b.year || MONTHS.indexOf(a.month) - MONTHS.indexOf(b.month))
       .map((intake) => `${monthLabel(intake.month)} ${intake.year}`),
     tuition: { amount: Number(program.tuition_amount), currency: program.tuition_currency },
+    feesAcademicYear: program.fees_academic_year,
+    verifiedAt:
+      program.verification_status === 'VERIFIED' && program.verified_at
+        ? program.verified_at.toISOString()
+        : null,
     scores: {
       overall: scored.overallScore,
       programmeFit: scored.fits.program.score,
@@ -244,8 +249,9 @@ const StudentPortalService = {
   GetMatches: async (studentId: string): Promise<ProgrammeMatch[]> => {
     const student = await loadStudent(studentId)
     const ctx = await scoringContext(student)
+    const verifiedOnly = await MatchingRepo.studentFacingVerifiedOnly()
     const [candidates, shortlisted] = await Promise.all([
-      MatchingRepo.findMatchingPrograms({ countries: ctx.countries, poolCap: POOL_CAP }),
+      MatchingRepo.findMatchingPrograms({ countries: ctx.countries, poolCap: POOL_CAP, verifiedOnly }),
       RecommendationsRepo.findShortlistedProgramIds(studentId),
     ])
     return candidates
