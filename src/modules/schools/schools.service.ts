@@ -29,6 +29,13 @@ const toSchoolResponse = (school: Schools) => ({
   admissionFriendlinessNotes: school.admission_friendliness_notes,
   rankingReputationNotes: school.ranking_reputation_notes,
 
+  // Read-only: set by the official-register import, never by the client.
+  visaSponsorStatus: school.visa_sponsor_status,
+  visaSponsorSource: school.visa_sponsor_source,
+  visaSponsorCheckedAt: school.visa_sponsor_checked_at,
+  visaSponsorRegisterName: school.visa_sponsor_register_name,
+  visaSponsorNote: school.visa_sponsor_note,
+
   createdAt: school.created_at,
   updatedAt: school.updated_at,
 })
@@ -36,6 +43,16 @@ const toSchoolResponse = (school: Schools) => ({
 export class SchoolsService {
   // ── POST /schools ─────────────────────────────────────────────────────────
   static CreateSchool = async (data: CreateSchoolDTO) => {
+    const duplicate = await SchoolsRepo.findActiveDuplicate(data.name, data.city, data.country)
+    if (duplicate) {
+      throw createError(
+        `This school already exists (${duplicate.public_id})`,
+        409,
+        { name: [`Already recorded as ${duplicate.public_id} in ${data.city}`], existingSchoolId: duplicate.public_id },
+        'CONFLICT',
+      )
+    }
+
     // withAudit inside the retry: a public-ID collision aborts the transaction.
     const school = await withUniquePublicId(createPublicSchoolId, (publicId) =>
       AuditService.withAudit(

@@ -1,7 +1,7 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
 import { SchoolsSchemas } from './schools.schemas'
-import { errorResponseSchema } from '../../docs/registry'
+import { errorContent, errorResponseSchema, successEnvelope } from '../../docs/registry'
 
 export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
   const schoolDataSchema = z.object({
@@ -26,6 +26,11 @@ export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
     admissionFriendlinessScore: z.number().nullable(),
     admissionFriendlinessNotes: z.string().nullable(),
     rankingReputationNotes: z.string().nullable(),
+    visaSponsorStatus: z.enum(['LICENSED', 'NOT_LISTED', 'UNKNOWN']),
+    visaSponsorSource: z.string().nullable(),
+    visaSponsorCheckedAt: z.date().nullable(),
+    visaSponsorRegisterName: z.string().nullable(),
+    visaSponsorNote: z.string().nullable(),
 
     createdAt: z.date(),
     updatedAt: z.date(),
@@ -231,6 +236,44 @@ export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
         description: 'School is already inactive.',
         content: { 'application/json': { schema: errorResponseSchema } },
       },
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/schools/sponsor-register/sync',
+    tags: ['Schools'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Check UK schools against the sponsor register now',
+    description:
+      'ADMIN or OPERATIONS. Downloads the current Home Office register of licensed student sponsors and updates the visa-sponsor status of every UK school (this also runs daily at 06:00 UK time). A name match means LICENSED; a previously licensed school that no longer matches becomes NOT_LISTED and admins are notified; other unmatched schools stay UNKNOWN and are listed so a person can fix the name.',
+    responses: {
+      200: {
+        description: 'Register checked.',
+        content: {
+          'application/json': {
+            schema: registry.register(
+              'SponsorRegisterSyncResponse',
+              successEnvelope(
+                z.object({
+                  csvUrl: z.string(),
+                  checkedAt: z.string(),
+                  ukSchools: z.number(),
+                  licensed: z.number(),
+                  notListed: z.number(),
+                  unmatched: z.array(
+                    z.object({ publicId: z.string(), name: z.string(), note: z.string().nullable() }),
+                  ),
+                  changed: z.number(),
+                }),
+              ),
+            ),
+          },
+        },
+      },
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may run the check.'),
+      500: errorContent('The register could not be downloaded or read.'),
     },
   })
 

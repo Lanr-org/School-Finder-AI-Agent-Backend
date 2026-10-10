@@ -8,9 +8,16 @@ import { flushSentry } from './config/sentry'
 import prisma from './database/prisma'
 import { closeRedis } from './database/redis.js'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
-import { aiReplyQueue, telegramInboundQueue, telegramOutboundQueue } from './jobs/queues.js'
+import {
+  aiReplyQueue,
+  scheduleSponsorRegisterSync,
+  sponsorRegisterQueue,
+  telegramInboundQueue,
+  telegramOutboundQueue,
+} from './jobs/queues.js'
 // Importing the workers starts them.
 import { aiReplyWorker } from './jobs/workers/ai-reply.worker.js'
+import { sponsorRegisterWorker } from './jobs/workers/sponsor-register.worker.js'
 import { telegramInboundWorker } from './jobs/workers/telegram-inbound.worker.js'
 import { telegramOutboundWorker } from './jobs/workers/telegram-outbound.worker.js'
 import { createShutdown } from './shutdown'
@@ -19,6 +26,12 @@ const server = http.createServer(app)
 
 server.listen(env.port, async () => {
   logger.info({ port: env.port }, 'Server started')
+
+  try {
+    await scheduleSponsorRegisterSync()
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Could not schedule the sponsor register sync.')
+  }
 
   // Automatically register Telegram Webhook URL with Telegram API on startup
   if (env.telegramWebhookUrl) {
@@ -41,6 +54,10 @@ const shutdown = createShutdown({
       name: 'ai-reply-worker',
       close: () => aiReplyWorker.close(),
     },
+    {
+      name: 'sponsor-register-worker',
+      close: () => sponsorRegisterWorker.close(),
+    },
   ],
   queues: [
     {
@@ -54,6 +71,10 @@ const shutdown = createShutdown({
     {
       name: 'ai-reply-queue',
       close: () => aiReplyQueue.close(),
+    },
+    {
+      name: 'sponsor-register-queue',
+      close: () => sponsorRegisterQueue.close(),
     },
     {
       name: 'redis-client',

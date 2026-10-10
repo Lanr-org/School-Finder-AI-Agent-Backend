@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { SchoolsService } from './schools.service'
+import { SponsorRegisterService } from './sponsorRegister.service'
 import { ProgramsService } from '../programs/programs.service'
 import { successResponse } from '../../http/response'
 import type { CreateSchoolDTO, ListSchoolsQueryDTO, UpdateSchoolDTO } from './schools.types'
@@ -94,6 +95,20 @@ export class SchoolsController {
       const result = await SchoolsService.DeleteSchool(schoolId)
       res.status(200).json(
         successResponse(true, 'School deactivated successfully', result, {
+          requestId: req.id,
+        }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // ── POST /schools/sponsor-register/sync ─────────────────────────────────
+  static SyncSponsorRegister = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await SponsorRegisterService.SyncUk()
+      res.status(200).json(
+        successResponse(true, 'UK sponsor register checked', result, {
           requestId: req.id,
         }),
       )
