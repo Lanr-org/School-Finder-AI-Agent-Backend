@@ -337,6 +337,63 @@ export const registerProgramsDocs = (
     ProgramsSchemas.listReportsQuerySchema,
   )
 
+  const registeredExtractProgramSchema = registry.register(
+    'ProgramExtractRequest',
+    ProgramsSchemas.extractProgramSchema,
+  )
+  const extractResponseSchema = registry.register(
+    'ProgramExtractResponse',
+    successEnvelope(
+      z.object({
+        sourceUrl: z.string().nullable(),
+        draft: z.object({
+          name: z.string().optional(),
+          studyLevel: z.enum(['UNDERGRADUATE', 'POSTGRADUATE', 'DOCTORATE', 'FOUNDATION']).optional(),
+          qualification: z.string().optional(),
+          duration: z.string().optional(),
+          tuitionAmount: z.number().optional(),
+          tuitionCurrency: z.string().optional(),
+          feesAcademicYear: z.string().optional(),
+          intakes: z.array(z.object({ month: z.string(), year: z.number() })).optional(),
+          academicRequirements: z.string().optional(),
+          englishRequirements: z.string().optional(),
+          scholarshipAvailability: z.string().optional(),
+        }),
+        evidence: z.record(z.string(), z.string()),
+        dropped: z.array(z.string()),
+        warnings: z.array(z.string()),
+      }),
+    ),
+  )
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/extract',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Read a course page into a program draft',
+    description:
+      'ADMIN or OPERATIONS. Reads the course page (or pasted page text) with the AI and returns a draft. Every value comes with the exact quote it was read from; values whose quote is not on the page are dropped and listed in `dropped`. Nothing is saved.',
+    request: {
+      body: {
+        required: true,
+        content: { 'application/json': { schema: registeredExtractProgramSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Draft read from the page.',
+        content: { 'application/json': { schema: extractResponseSchema } },
+      },
+      400: errorContent(
+        'Validation failed, or the page could not be read (details.url says why; paste the text instead).',
+      ),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may read course pages.'),
+      429: errorContent('The daily AI limit is reached.'),
+    },
+  })
+
   registry.registerPath({
     method: 'post',
     path: '/api/v1/programs/{programId}/verify',

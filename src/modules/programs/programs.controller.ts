@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { ProgramsService } from './programs.service'
+import { ProgramExtractService } from './programs.extract'
 import { successResponse } from '../../http/response'
 import type { AccessTokenClaims } from '../auth/auth.types.js'
 import type {
@@ -65,6 +66,22 @@ export class ProgramsController {
       )
       res.status(200).json(
         successResponse(true, 'Program updated successfully', result, {
+          requestId: req.id,
+        }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // ── POST /programs/extract ──────────────────────────────────────────────
+  static ExtractProgram = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await ProgramExtractService.ExtractDraft(
+        req.body as { url?: string; pageText?: string },
+      )
+      res.status(200).json(
+        successResponse(true, 'Course page read', result, {
           requestId: req.id,
         }),
       )

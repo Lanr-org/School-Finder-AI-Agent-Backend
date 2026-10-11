@@ -26,6 +26,14 @@ programsRouter.post(
   ProgramsController.CreateProgram,
 )
 
+// Reads a course page and returns a draft with quotes; saves nothing.
+programsRouter.post(
+  '/extract',
+  canManagePrograms,
+  validate(ProgramsSchemas.extractProgramSchema),
+  ProgramsController.ExtractProgram,
+)
+
 programsRouter.get(
   '/:programId',
   validateParams(ProgramsSchemas.programIdParamsSchema),
