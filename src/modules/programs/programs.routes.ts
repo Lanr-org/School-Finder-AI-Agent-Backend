@@ -55,6 +55,13 @@ programsRouter.post(
   ProgramsController.VerifyProgram,
 )
 
+programsRouter.post(
+  '/:programId/source-check',
+  canManagePrograms,
+  validateParams(ProgramsSchemas.programIdParamsSchema),
+  ProgramsController.CheckSource,
+)
+
 // Any signed-in staff member, advisors included: they are the ones who notice stale data.
 programsRouter.post(
   '/:programId/reports',

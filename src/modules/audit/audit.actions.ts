@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS = {
   PROGRAM_VERIFIED: 'program.verified',
   PROGRAM_DATA_REPORTED: 'program.data_reported',
   PROGRAM_REPORT_RESOLVED: 'program.report_resolved',
+  PROGRAM_SOURCE_CHANGED: 'program.source_changed',
   SETTING_VALUE_CREATED: 'setting.value_created',
   SETTING_VALUE_UPDATED: 'setting.value_updated',
   SETTING_VALUE_DELETED: 'setting.value_deleted',

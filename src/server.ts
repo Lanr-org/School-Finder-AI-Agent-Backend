@@ -10,6 +10,8 @@ import { closeRedis } from './database/redis.js'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
 import {
   aiReplyQueue,
+  programSourceCheckQueue,
+  scheduleProgramSourceCheck,
   scheduleSponsorRegisterSync,
   sponsorRegisterQueue,
   telegramInboundQueue,
@@ -17,6 +19,7 @@ import {
 } from './jobs/queues.js'
 // Importing the workers starts them.
 import { aiReplyWorker } from './jobs/workers/ai-reply.worker.js'
+import { programSourceCheckWorker } from './jobs/workers/program-source-check.worker.js'
 import { sponsorRegisterWorker } from './jobs/workers/sponsor-register.worker.js'
 import { telegramInboundWorker } from './jobs/workers/telegram-inbound.worker.js'
 import { telegramOutboundWorker } from './jobs/workers/telegram-outbound.worker.js'
@@ -31,6 +34,11 @@ server.listen(env.port, async () => {
     await scheduleSponsorRegisterSync()
   } catch (error) {
     logger.error({ error: (error as Error).message }, 'Could not schedule the sponsor register sync.')
+  }
+  try {
+    await scheduleProgramSourceCheck()
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Could not schedule the weekly programme source check.')
   }
 
   // Automatically register Telegram Webhook URL with Telegram API on startup
@@ -58,6 +66,10 @@ const shutdown = createShutdown({
       name: 'sponsor-register-worker',
       close: () => sponsorRegisterWorker.close(),
     },
+    {
+      name: 'program-source-check-worker',
+      close: () => programSourceCheckWorker.close(),
+    },
   ],
   queues: [
     {
@@ -75,6 +87,10 @@ const shutdown = createShutdown({
     {
       name: 'sponsor-register-queue',
       close: () => sponsorRegisterQueue.close(),
+    },
+    {
+      name: 'program-source-check-queue',
+      close: () => programSourceCheckQueue.close(),
     },
     {
       name: 'redis-client',

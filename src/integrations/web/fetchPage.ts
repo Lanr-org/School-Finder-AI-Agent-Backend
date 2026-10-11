@@ -6,7 +6,18 @@ import { BlockList, isIP } from 'node:net'
 // the server must never be steered into its own network: https only, and every address the
 // host resolves to is checked at connect time (which also defeats DNS rebinding).
 
-export class PageFetchError extends Error {}
+// Why a page couldn't be read: the watcher treats a blocked site, a removed page and a passing
+// network failure differently.
+export type PageFetchErrorKind = 'invalid' | 'blocked' | 'gone' | 'failed'
+
+export class PageFetchError extends Error {
+  constructor(
+    message: string,
+    readonly kind: PageFetchErrorKind = 'invalid',
+  ) {
+    super(message)
+  }
+}
 
 const BLOCKED = new BlockList()
 for (const [network, prefix] of [
@@ -165,6 +176,7 @@ export const fetchPageText = async (
         throw error.cause
       throw new PageFetchError(
         "We couldn't open this page. Paste the page text instead.",
+        'failed',
       )
     }
 
@@ -178,16 +190,19 @@ export const fetchPageText = async (
     if (status === 401 || status === 403 || status === 429) {
       throw new PageFetchError(
         'This site blocked automatic reading. Paste the page text instead.',
+        'blocked',
       )
     }
     if (status === 404 || status === 410) {
       throw new PageFetchError(
         'This page does not exist any more. Check the link.',
+        'gone',
       )
     }
     if (status >= 400) {
       throw new PageFetchError(
         "We couldn't open this page. Paste the page text instead.",
+        'failed',
       )
     }
 
@@ -195,17 +210,20 @@ export const fetchPageText = async (
     if (!/text\/html|application\/xhtml/i.test(contentType)) {
       throw new PageFetchError(
         'This link is not a web page. Paste the page text instead.',
+        'blocked',
       )
     }
     const text = htmlToText(response.data)
     if (text.length < MIN_TEXT_LENGTH) {
       throw new PageFetchError(
         'This page loads its content with JavaScript, so it can’t be read automatically. Paste the page text instead.',
+        'blocked',
       )
     }
     return { url: url.toString(), text }
   }
   throw new PageFetchError(
     'This link redirects too many times. Paste the page text instead.',
+    'failed',
   )
 }

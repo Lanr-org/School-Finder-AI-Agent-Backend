@@ -69,6 +69,7 @@ export const registerProgramsDocs = (
     verifiedBy: staffRefSchema.nullable(),
     evidence: z.record(z.string(), z.string()).nullable(),
     lastCheckedAt: z.date().nullable(),
+    sourceCheckNote: z.string().nullable(),
 
     createdAt: z.date(),
     updatedAt: z.date(),
@@ -391,6 +392,27 @@ export const registerProgramsDocs = (
       401: errorContent('Bearer token is missing or invalid.'),
       403: errorContent('Only ADMIN or OPERATIONS may read course pages.'),
       429: errorContent('The daily AI limit is reached.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/{programId}/source-check',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Re-read the course page now',
+    description:
+      'ADMIN or OPERATIONS. Re-reads sourceUrl and checks every stored evidence quote is still on the page (the same check the weekly job runs). A VERIFIED program whose quotes changed, whose page is gone, whose fees year has passed or that was verified over a year ago becomes NEEDS_RECHECK. Returns the program with sourceCheckNote and lastCheckedAt.',
+    request: { params: registeredProgramIdParamsSchema },
+    responses: {
+      200: {
+        description: 'Checked.',
+        content: { 'application/json': { schema: programResponseSchema } },
+      },
+      400: errorContent('programId is malformed.'),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may run source checks.'),
+      404: errorContent('Program not found.'),
     },
   })
 

@@ -92,6 +92,7 @@ const toProgramResponse = (program: ProgramWithSchool) => ({
   verifiedBy: toPersonRef(program.verified_by),
   evidence: (program.evidence ?? null) as Record<string, string> | null,
   lastCheckedAt: program.last_checked_at,
+  sourceCheckNote: program.source_check_note,
 
   createdAt: program.created_at,
   updatedAt: program.updated_at,
