@@ -92,6 +92,13 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
       duration: z.string(),
       intakes: z.array(z.string()).openapi({ example: ['September 2027'] }),
       tuition: money,
+      feesAcademicYear: z.string().nullable().openapi({ example: '2026/27' }),
+      verifiedAt: z.string().nullable().openapi({
+        description: 'When a person checked the fees against the official course page; null if not verified.',
+      }),
+      sourceUrl: z.string().nullable().openapi({
+        description: 'The official course page; only sent for verified programmes.',
+      }),
       scores: z.object({
         overall: z.number(),
         programmeFit: z.number(),

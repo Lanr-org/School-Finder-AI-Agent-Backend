@@ -283,6 +283,31 @@ describe('GET /api/v1/student/matches', () => {
 })
 
 describe('shortlist and choice', () => {
+  it('shows when and where a programme was verified, and never a link for unverified data', async () => {
+    const verifiedAt = new Date('2026-10-03T09:00:00Z')
+    portalRepo.findProgramForScoring.mockResolvedValue(
+      makeProgram(1, {
+        verification_status: 'VERIFIED',
+        verified_at: verifiedAt,
+        source_url: 'https://www.coventry.ac.uk/course/',
+        fees_academic_year: '2026/27',
+      }) as never,
+    )
+    recRepo.findShortlistedProgramIds.mockResolvedValue(new Set())
+    const verified = await auth(request(app).post('/api/v1/student/shortlist/PRG-1001'))
+    expect(verified.body.data).toMatchObject({
+      verifiedAt: verifiedAt.toISOString(),
+      sourceUrl: 'https://www.coventry.ac.uk/course/',
+      feesAcademicYear: '2026/27',
+    })
+
+    portalRepo.findProgramForScoring.mockResolvedValue(
+      makeProgram(1, { verification_status: 'UNVERIFIED', source_url: 'https://example.ac.uk/' }) as never,
+    )
+    const unverified = await auth(request(app).post('/api/v1/student/shortlist/PRG-1001'))
+    expect(unverified.body.data).toMatchObject({ verifiedAt: null, sourceUrl: null })
+  })
+
   it('404s when adding an unknown or inactive programme', async () => {
     portalRepo.findProgramForScoring.mockResolvedValue(null)
     const res = await auth(request(app).post('/api/v1/student/shortlist/PRG-9999'))

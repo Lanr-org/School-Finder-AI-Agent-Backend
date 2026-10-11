@@ -122,6 +122,7 @@ const toProgrammeMatch = (
       program.verification_status === 'VERIFIED' && program.verified_at
         ? program.verified_at.toISOString()
         : null,
+    sourceUrl: program.verification_status === 'VERIFIED' ? program.source_url : null,
     scores: {
       overall: scored.overallScore,
       programmeFit: scored.fits.program.score,

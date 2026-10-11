@@ -89,6 +89,7 @@ export type ProgrammeMatch = {
   tuition: Money
   feesAcademicYear: string | null
   verifiedAt: string | null // ISO date a person checked the fees against the official page
+  sourceUrl: string | null // the official course page, only when verified
   scores: {
     overall: number
     programmeFit: number
