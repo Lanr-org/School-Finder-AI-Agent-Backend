@@ -31,6 +31,7 @@ import { buildAdvisorLookup } from '../team/advisor-lookup.js'
 import { VisaRatesRepo } from '../visaRates/visaRates.repository.js'
 import JourneyService from './studentJourney.service'
 import StudentPortalRepo from './studentPortal.repository'
+import { hasAcceptedTerms, StudentTermsService } from './studentTerms'
 import type {
   Journey,
   PortalChat,
@@ -216,7 +217,13 @@ const StudentPortalService = {
       advisor: advisorName ? { name: advisorName, handling: mode === 'HUMAN_ADVISOR' } : null,
       conversationMode: mode,
       telegramLinked: student.identities.some((i) => i.provider === 'TELEGRAM'),
+      termsAccepted: hasAcceptedTerms(student),
     }
+  },
+
+  AcceptTerms: async (studentId: string): Promise<StudentMe> => {
+    await StudentTermsService.Accept(studentId, MessageChannel.WEB)
+    return StudentPortalService.GetMe(studentId)
   },
 
   UpdateProfile: async (studentId: string, dto: UpdateProfileDTO): Promise<StudentMe> => {

@@ -16,6 +16,9 @@ const PORTAL_NOTE =
   "Student-facing API (the Smetase web app). Requires a student access token from /api/v1/student/auth; staff tokens are rejected. Every route reads and changes only the signed-in student's own record, identified from the token."
 
 const unauthorized = errorContent('Missing, invalid or expired student token, or the session has ended.')
+export const termsRequired = errorContent(
+  'The student has not accepted the terms yet (POST /api/v1/student/me/accept-terms).',
+)
 
 export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
   const money = z.object({ amount: z.number(), currency: z.string().openapi({ description: 'ISO 4217 code' }) })
@@ -41,6 +44,10 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         .nullable(),
       conversationMode: z.enum(['AI_BOT', 'HUMAN_ADVISOR']),
       telegramLinked: z.boolean().openapi({ description: 'true once a Telegram account is linked to this student' }),
+      termsAccepted: z.boolean().openapi({
+        description:
+          'true once the student clicked "I agree to the Terms and Privacy Policy" for the current terms version. Until then the routes that use their data return 403.',
+      }),
     }),
   )
 
@@ -144,6 +151,19 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
   })
 
   registry.registerPath({
+    method: 'post',
+    path: '/api/v1/student/me/accept-terms',
+    tags: ['Student portal'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Accept the terms (one click)',
+    description: `${PORTAL_NOTE} Records that the student agreed: "I agree to the Terms and Privacy Policy" (the Terms set the age rule: 16+, parent/guardian permission under 18). Stores the time and terms version and writes an audit row. Calling it again for the same version changes nothing.`,
+    responses: {
+      200: { description: 'Terms accepted; returns the profile.', content: json(successEnvelope(studentMeSchema)) },
+      401: unauthorized,
+    },
+  })
+
+  registry.registerPath({
     method: 'patch',
     path: '/api/v1/student/me/profile',
     tags: ['Student portal'],
@@ -168,6 +188,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Journey retrieved.', content: json(successEnvelope(journeySchema)) },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -181,6 +202,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Matches retrieved.', content: json(successEnvelope(z.array(programmeMatchSchema))) },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -195,6 +217,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Added; returns the scored programme.', content: json(successEnvelope(programmeMatchSchema)) },
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('Programme not found, or its school is inactive.'),
     },
   })
@@ -210,6 +233,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Removed; returns the scored programme.', content: json(successEnvelope(programmeMatchSchema)) },
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('Programme not found.'),
     },
   })
@@ -226,6 +250,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
       200: { description: 'Programme chosen; returns the updated journey.', content: json(successEnvelope(journeySchema)) },
       400: errorContent('Validation failed.'),
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('Programme not found, or its school is inactive.'),
     },
   })
@@ -243,6 +268,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         content: json(successEnvelope(studyPlanSchema.nullable())),
       },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -283,6 +309,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         ),
       },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -301,6 +328,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         ),
       },
       401: unauthorized,
+      403: termsRequired,
       429: errorContent('More than 20 requests in a minute.'),
     },
   })
@@ -320,6 +348,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
       },
       400: errorContent('Validation failed (empty, or longer than 2000 characters).'),
       401: unauthorized,
+      403: termsRequired,
       429: errorContent('More than 20 messages in a minute.'),
     },
   })
@@ -336,7 +365,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
       200: { description: 'Updated; returns the journey.', content: json(successEnvelope(journeySchema)) },
       400: errorContent('Unknown step key.'),
       401: unauthorized,
-      403: errorContent('This step is updated by the advisor.'),
+      403: errorContent('This step is updated by the advisor, or the student has not accepted the terms yet.'),
     },
   })
   registry.registerPath(journeyCheckPath('put'))
@@ -355,6 +384,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
         content: json(successEnvelope(z.object({ url: z.string().url(), expiresAt: z.string() }))),
       },
       401: unauthorized,
+      403: termsRequired,
       409: errorContent('No programme chosen yet.'),
     },
   })
@@ -369,6 +399,7 @@ export const registerStudentPortalDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Links revoked.', content: json(emptySuccessResponseSchema) },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 

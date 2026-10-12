@@ -58,6 +58,24 @@ export class TelegramCommandHandler {
   }
 
   /**
+   * The onboarding opener: asks for the study level (/start, and right after "I agree").
+   */
+  static async sendWelcome(chatId: string): Promise<void> {
+    const levelKeyboard = new InlineKeyboard()
+      .text('🎓 Masters', 'SELECT_LEVEL:MASTERS')
+      .text('🏛️ Bachelors', 'SELECT_LEVEL:BACHELORS')
+      .row()
+      .text('🔬 PhD / Doctorate', 'SELECT_LEVEL:PHD')
+      .text('📜 Diploma', 'SELECT_LEVEL:DIPLOMA')
+
+    await TelegramOutboundService.sendMessage(
+      chatId,
+      'Welcome to Smetase! 🎓\n\nTo help us find the best study opportunities for you, what level of study are you aiming for?',
+      levelKeyboard
+    )
+  }
+
+  /**
    * Processes recognized bot commands (welcome, help, and the web plan link).
    */
   static async handleCommand(chatId: string, text: string, studentId: string): Promise<boolean> {
@@ -70,21 +88,9 @@ export class TelegramCommandHandler {
     logger.info({ chatId, command: parsed.command }, 'Handling Telegram command.')
 
     switch (parsed.command) {
-      case 'start': {
-        const levelKeyboard = new InlineKeyboard()
-          .text('🎓 Masters', 'SELECT_LEVEL:MASTERS')
-          .text('🏛️ Bachelors', 'SELECT_LEVEL:BACHELORS')
-          .row()
-          .text('🔬 PhD / Doctorate', 'SELECT_LEVEL:PHD')
-          .text('📜 Diploma', 'SELECT_LEVEL:DIPLOMA')
-
-        await TelegramOutboundService.sendMessage(
-          chatId,
-          'Welcome to Smetase! 🎓\n\nTo help us find the best study opportunities for you, what level of study are you aiming for?',
-          levelKeyboard
-        )
+      case 'start':
+        await this.sendWelcome(chatId)
         return true
-      }
 
       case 'plan': {
         // Signing in with Google on this link joins the web account to this Telegram student.

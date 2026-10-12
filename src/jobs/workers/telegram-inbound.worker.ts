@@ -15,6 +15,7 @@ import { TelegramOutboundService } from '../../integrations/telegram/services/te
 import { MessageChannel } from '../../generated/prisma/index.js'
 import { AiUsageService } from '../../modules/ai/aiUsage.service.js'
 import { TelegramInterviewHandler } from '../../integrations/telegram/handlers/interview.handler.js'
+import { TelegramTermsHandler } from '../../integrations/telegram/handlers/terms.handler.js'
 
 const parseRedisUrl = (url: string) => {
   const parsed = new URL(url)
@@ -64,6 +65,18 @@ export const telegramInboundWorker = new Worker<TelegramWebhookUpdate>(
 
     // 1. Resolve or Register Student in PostgreSQL Database
     const studentContext = await ContactsService.resolveTelegramContact(contactDTO)
+
+    // 1b. The one-click agreement. Until the student taps "I agree", nothing they send is
+    // saved or answered: they get the agreement message again.
+    if (
+      await TelegramTermsHandler.gate(
+        messageDTO.externalChatId,
+        studentContext.studentId,
+        messageDTO.isCallback ? messageDTO.callbackData : null
+      )
+    ) {
+      return
+    }
 
     // 2. Handle Bot Commands (e.g. /start, /help, /plan)
     if (messageDTO.textContent && messageDTO.textContent.startsWith('/')) {

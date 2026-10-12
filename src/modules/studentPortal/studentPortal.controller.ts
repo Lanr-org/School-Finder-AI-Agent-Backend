@@ -33,6 +33,14 @@ const StudentPortalController = {
     }
   },
 
+  AcceptTerms: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      send(req, res, 'Terms accepted', await StudentPortalService.AcceptTerms(studentIdOf(req)))
+    } catch (error) {
+      next(error)
+    }
+  },
+
   UpdateProfile: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const me = await StudentPortalService.UpdateProfile(studentIdOf(req), req.body as UpdateProfileDTO)
