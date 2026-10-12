@@ -1,4 +1,5 @@
 import prisma from '../../database/prisma'
+import type { UserRole } from '../../generated/prisma/index.js'
 import { withTx, type Db, type Tx } from '../../database/transaction'
 import type {
   CreateAndInviteData,
@@ -101,6 +102,14 @@ class TeamRepo {
       select: { id: true },
     })
     return admins.map((admin) => admin.id)
+  }
+
+  static async findActiveUserIdsByRoles(roles: UserRole[]) {
+    const users = await prisma.users.findMany({
+      where: { role: { in: roles }, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    return users.map((user) => user.id)
   }
 
   static async findUsersByIds(ids: string[]) {

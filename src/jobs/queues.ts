@@ -86,3 +86,23 @@ export const scheduleSponsorRegisterSync = () =>
     { pattern: '0 6 * * *', tz: 'Europe/London' },
     { name: 'sync-uk' },
   )
+
+/**
+ * Weekly re-read of every verified programme's course page: flags NEEDS_RECHECK when a quoted
+ * fact is no longer there. No retries; a page that fails is counted and tried again next week.
+ */
+export const programSourceCheckQueue = new Queue('program-source-check', {
+  connection,
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: 20,
+    removeOnFail: 20,
+  },
+})
+
+export const scheduleProgramSourceCheck = () =>
+  programSourceCheckQueue.upsertJobScheduler(
+    'weekly-program-source-check',
+    { pattern: '0 5 * * 1', tz: 'Europe/London' },
+    { name: 'check-verified' },
+  )

@@ -79,6 +79,19 @@ const StudentPortalRepo = {
     tx.studentJourneyCheck.deleteMany({ where: { student_id: studentId, key } }),
 
   // Only the first share is recorded.
+  findTermsAcceptance: (studentId: string) =>
+    prisma.student.findUnique({
+      where: { id: studentId },
+      select: { public_id: true, terms_accepted_at: true, terms_version: true },
+    }),
+
+  acceptTerms: (studentId: string, version: string, db: Db = prisma) =>
+    db.student.update({
+      where: { id: studentId },
+      data: { terms_accepted_at: new Date(), terms_version: version },
+      select: { public_id: true, terms_accepted_at: true, terms_version: true },
+    }),
+
   markStudyPlanShared: (studentId: string) =>
     prisma.student.updateMany({
       where: { id: studentId, study_plan_shared_at: null },

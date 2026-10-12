@@ -176,6 +176,8 @@ const makeProgram = (overrides: Record<string, unknown> = {}) => ({
   verified_by: null as { public_id: string; full_name: string } | null,
   evidence: null as Record<string, string> | null,
   last_checked_at: null as Date | null,
+  source_check_failures: 0,
+  source_check_note: null as string | null,
 
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),

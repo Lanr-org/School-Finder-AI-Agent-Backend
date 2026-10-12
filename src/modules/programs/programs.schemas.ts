@@ -100,6 +100,22 @@ export class ProgramsSchemas {
       .max(2000),
   })
 
+  // A course page link to read, or its text pasted by hand when the site blocks reading.
+  static extractProgramSchema = z
+    .object({
+      url: sourceUrlSchema.optional(),
+      pageText: z
+        .string()
+        .trim()
+        .min(200, 'Paste the whole course page (select all, copy)')
+        .max(100_000, 'That is too much text; paste just the course page')
+        .optional(),
+    })
+    .refine((body) => body.url !== undefined || body.pageText !== undefined, {
+      message: 'Give the course page link or paste its text',
+      path: ['url'],
+    })
+
   static reportIdParamsSchema = z.object({
     reportId: z.string().uuid('Must be a valid report ID'),
   })

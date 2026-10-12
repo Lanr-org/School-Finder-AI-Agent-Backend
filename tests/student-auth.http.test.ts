@@ -10,6 +10,7 @@ import { verifyGoogleIdToken } from '../src/integrations/google/googleIdToken'
 import StudentAuthRepo from '../src/modules/studentAuth/studentAuth.repository'
 import StudentPortalRepo from '../src/modules/studentPortal/studentPortal.repository'
 import StudentLinkService from '../src/modules/studentLink/studentLink.service'
+import { CURRENT_TERMS_VERSION } from '../src/modules/studentPortal/studentTerms'
 
 vi.mock('../src/integrations/google/googleIdToken', () => ({ verifyGoogleIdToken: vi.fn() }))
 
@@ -28,7 +29,7 @@ vi.mock('../src/modules/studentAuth/studentAuth.repository', () => ({
 
 // GET /student/me now lives in the portal module; only its lookup is mocked here.
 vi.mock('../src/modules/studentPortal/studentPortal.repository', () => ({
-  default: { findStudent: vi.fn() },
+  default: { findStudent: vi.fn(), findTermsAcceptance: vi.fn(), acceptTerms: vi.fn() },
 }))
 vi.mock('../src/modules/team/advisor-lookup', () => ({ buildAdvisorLookup: vi.fn(async () => new Map()) }))
 
@@ -42,6 +43,7 @@ vi.mock('../src/modules/studentLink/studentLink.service', () => ({ default: { Li
 const repo = vi.mocked(StudentAuthRepo)
 const verifyGoogle = vi.mocked(verifyGoogleIdToken)
 const linkGoogle = vi.mocked(StudentLinkService).LinkGoogle
+const portalRepo = vi.mocked(StudentPortalRepo)
 
 const COOKIE = 'smetase_student_rt'
 const refreshToken = 'a'.repeat(128)
@@ -64,6 +66,12 @@ const setCookieHeader = (res: request.Response) => {
 beforeEach(() => {
   vi.clearAllMocks()
   repo.createSession.mockResolvedValue({ id: 'session-uuid' } as never)
+  portalRepo.findTermsAcceptance.mockResolvedValue({ public_id: 'STU-1234', terms_accepted_at: null, terms_version: null })
+  portalRepo.acceptTerms.mockResolvedValue({
+    public_id: 'STU-1234',
+    terms_accepted_at: new Date(),
+    terms_version: CURRENT_TERMS_VERSION,
+  })
 })
 
 describe('POST /api/v1/student/auth/google', () => {
@@ -99,6 +107,29 @@ describe('POST /api/v1/student/auth/google', () => {
     expect(res.body.data.isNewStudent).toBe(false)
     expect(repo.registerGoogleStudent).not.toHaveBeenCalled()
     expect(repo.touchIdentityLogin).toHaveBeenCalledWith('identity-uuid')
+  })
+
+  it('records the terms agreement ("By continuing with Google, you agree...")', async () => {
+    verifyGoogle.mockResolvedValue(profile)
+    repo.findIdentity.mockResolvedValue({ id: 'identity-uuid', student } as never)
+
+    await request(app).post('/api/v1/student/auth/google').send({ credential: 'google-id-token' })
+
+    expect(portalRepo.acceptTerms).toHaveBeenCalledWith('student-uuid', CURRENT_TERMS_VERSION, expect.anything())
+  })
+
+  it('does not record it again when the current terms are already accepted', async () => {
+    verifyGoogle.mockResolvedValue(profile)
+    repo.findIdentity.mockResolvedValue({ id: 'identity-uuid', student } as never)
+    portalRepo.findTermsAcceptance.mockResolvedValue({
+      public_id: 'STU-1234',
+      terms_accepted_at: new Date(),
+      terms_version: CURRENT_TERMS_VERSION,
+    })
+
+    await request(app).post('/api/v1/student/auth/google').send({ credential: 'google-id-token' })
+
+    expect(portalRepo.acceptTerms).not.toHaveBeenCalled()
   })
 
   it('rejects an unverified Google email', async () => {

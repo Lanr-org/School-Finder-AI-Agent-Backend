@@ -19,6 +19,7 @@ import { CentrifugoClient } from '../src/integrations/centrifugo/services/centri
 import StudyPlanLinkRepo from '../src/modules/studyPlanLinks/studyPlanLinks.repository'
 import { AuditRepo } from '../src/modules/audit/audit.repository'
 import { hashOpaqueToken } from '../src/common/security/opaqueToken'
+import { CURRENT_TERMS_VERSION } from '../src/modules/studentPortal/studentTerms'
 
 vi.mock('../src/modules/studentAuth/studentAuth.repository', () => ({
   default: { findSessionById: vi.fn() },
@@ -36,6 +37,8 @@ vi.mock('../src/modules/studentPortal/studentPortal.repository', () => ({
     findJourneyChecks: vi.fn(),
     setJourneyCheck: vi.fn(),
     clearJourneyCheck: vi.fn(),
+    findTermsAcceptance: vi.fn(),
+    acceptTerms: vi.fn(),
   },
 }))
 vi.mock('../src/modules/studyPlanLinks/studyPlanLinks.repository', () => ({
@@ -100,6 +103,8 @@ const makeStudent = (overrides: Record<string, unknown> = {}) => ({
   english_test_score: 'IELTS 6.5',
   chosen_program_id: null,
   study_plan_shared_at: null,
+  terms_accepted_at: new Date('2026-10-12T09:00:00Z'),
+  terms_version: CURRENT_TERMS_VERSION,
   contact: { first_name: 'Emmanuel', last_name: 'Oyelowo', email: 'e@example.com' },
   identities: [{ email: 'e@example.com' }],
   conversations: [{ mode: 'AI_BOT' }],
@@ -139,6 +144,11 @@ beforeEach(() => {
   portalRepo.countShortlist.mockResolvedValue(0)
   portalRepo.listApplicationStatuses.mockResolvedValue([])
   portalRepo.findJourneyChecks.mockResolvedValue([])
+  portalRepo.findTermsAcceptance.mockResolvedValue({
+    public_id: 'STU-6377',
+    terms_accepted_at: new Date('2026-10-12T09:00:00Z'),
+    terms_version: CURRENT_TERMS_VERSION,
+  })
   recRepo.getCurrentWeights.mockResolvedValue({
     version: 1,
     weights: { programWeight: 35, budgetWeight: 25, intakeWeight: 20, visaWeight: 20 },
@@ -166,7 +176,79 @@ describe('GET /api/v1/student/me', () => {
       advisor: null,
       conversationMode: 'AI_BOT',
       telegramLinked: false,
+      termsAccepted: true,
     })
+  })
+
+  it('reports terms not accepted for an older terms version', async () => {
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ terms_version: '2020-01-01' }) as never)
+    const res = await auth(request(app).get('/api/v1/student/me'))
+    expect(res.body.data.termsAccepted).toBe(false)
+  })
+})
+
+describe('the one-click agreement', () => {
+  const notAccepted = () => {
+    portalRepo.findTermsAcceptance.mockResolvedValue({
+      public_id: 'STU-6377',
+      terms_accepted_at: null,
+      terms_version: null,
+    })
+    portalRepo.findStudent.mockResolvedValue(makeStudent({ terms_accepted_at: null, terms_version: null }) as never)
+  }
+
+  it.each([
+    ['get', '/api/v1/student/messages'],
+    ['post', '/api/v1/student/messages'],
+    ['get', '/api/v1/student/matches'],
+    ['get', '/api/v1/student/journey'],
+    ['get', '/api/v1/student/study-plan'],
+    ['post', '/api/v1/student/advisor-request'],
+    ['get', '/api/v1/student/interview-sessions'],
+  ] as const)('blocks %s %s until the student agrees', async (method, path) => {
+    notAccepted()
+    const res = await auth(request(app)[method](path)).send({ content: 'hi' })
+    expect(res.status).toBe(403)
+    expect(res.body.error.code).toBe('FORBIDDEN')
+    expect(vi.mocked(StudentMessageService).Receive).not.toHaveBeenCalled()
+  })
+
+  it('still serves /me and the profile before agreeing', async () => {
+    notAccepted()
+    expect((await auth(request(app).get('/api/v1/student/me'))).status).toBe(200)
+    studentsRepo.updateStudentPreferences.mockResolvedValue({} as never)
+    expect((await auth(request(app).patch('/api/v1/student/me/profile')).send({ studyLevel: 'MASTERS' })).status).toBe(
+      200,
+    )
+  })
+
+  it('records the current terms version with an audit row', async () => {
+    notAccepted()
+    portalRepo.acceptTerms.mockResolvedValue({
+      public_id: 'STU-6377',
+      terms_accepted_at: new Date('2026-10-12T10:00:00Z'),
+      terms_version: CURRENT_TERMS_VERSION,
+    })
+
+    const res = await auth(request(app).post('/api/v1/student/me/accept-terms'))
+
+    expect(res.status).toBe(200)
+    expect(portalRepo.acceptTerms).toHaveBeenCalledWith(STUDENT_ID, CURRENT_TERMS_VERSION, expect.anything())
+    expect(vi.mocked(AuditRepo).record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'student.terms_accepted', entity_id: 'STU-6377', actor_id: null }),
+    )
+  })
+
+  it('does nothing when the current version is already accepted', async () => {
+    const res = await auth(request(app).post('/api/v1/student/me/accept-terms'))
+    expect(res.status).toBe(200)
+    expect(portalRepo.acceptTerms).not.toHaveBeenCalled()
+    expect(vi.mocked(AuditRepo).record).not.toHaveBeenCalled()
+  })
+
+  it('needs a student token', async () => {
+    expect((await request(app).post('/api/v1/student/me/accept-terms')).status).toBe(401)
   })
 
   it('reports a linked Telegram account and keeps the Google email', async () => {
@@ -283,6 +365,31 @@ describe('GET /api/v1/student/matches', () => {
 })
 
 describe('shortlist and choice', () => {
+  it('shows when and where a programme was verified, and never a link for unverified data', async () => {
+    const verifiedAt = new Date('2026-10-03T09:00:00Z')
+    portalRepo.findProgramForScoring.mockResolvedValue(
+      makeProgram(1, {
+        verification_status: 'VERIFIED',
+        verified_at: verifiedAt,
+        source_url: 'https://www.coventry.ac.uk/course/',
+        fees_academic_year: '2026/27',
+      }) as never,
+    )
+    recRepo.findShortlistedProgramIds.mockResolvedValue(new Set())
+    const verified = await auth(request(app).post('/api/v1/student/shortlist/PRG-1001'))
+    expect(verified.body.data).toMatchObject({
+      verifiedAt: verifiedAt.toISOString(),
+      sourceUrl: 'https://www.coventry.ac.uk/course/',
+      feesAcademicYear: '2026/27',
+    })
+
+    portalRepo.findProgramForScoring.mockResolvedValue(
+      makeProgram(1, { verification_status: 'UNVERIFIED', source_url: 'https://example.ac.uk/' }) as never,
+    )
+    const unverified = await auth(request(app).post('/api/v1/student/shortlist/PRG-1001'))
+    expect(unverified.body.data).toMatchObject({ verifiedAt: null, sourceUrl: null })
+  })
+
   it('404s when adding an unknown or inactive programme', async () => {
     portalRepo.findProgramForScoring.mockResolvedValue(null)
     const res = await auth(request(app).post('/api/v1/student/shortlist/PRG-9999'))

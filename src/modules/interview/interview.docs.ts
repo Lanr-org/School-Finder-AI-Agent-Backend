@@ -2,6 +2,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 import { z } from 'zod'
 import { errorContent, successEnvelope } from '../../docs/registry'
 import { InterviewStatus, InterviewType } from '../../generated/prisma/index.js'
+import { termsRequired } from '../studentPortal/studentPortal.docs'
 import { sessionIdParamsSchema, startInterviewSchema, submitAnswerSchema } from './interview.schemas'
 
 const NOTE =
@@ -79,6 +80,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
       201: { description: 'Started; returns the first question.', content: json(successEnvelope(turnSchema)) },
       400: errorContent('Validation failed.'),
       401: unauthorized,
+      403: termsRequired,
       409: errorContent('An interview is already in progress (details.sessionId).'),
       429: errorContent("Daily interview limit or the platform's AI budget reached."),
     },
@@ -94,6 +96,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Interviews retrieved.', content: json(successEnvelope(z.array(sessionSchema))) },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -107,6 +110,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Active interview, or null.', content: json(successEnvelope(sessionSchema.nullable())) },
       401: unauthorized,
+      403: termsRequired,
     },
   })
 
@@ -121,6 +125,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
     responses: {
       200: { description: 'Interview retrieved.', content: json(successEnvelope(sessionSchema)) },
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('Interview not found (or not yours).'),
     },
   })
@@ -137,6 +142,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
       200: { description: 'Answer recorded.', content: json(successEnvelope(turnSchema)) },
       400: errorContent('Validation failed (empty or over 1500 characters).'),
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('Interview not found (or not yours).'),
       409: errorContent('Interview already finished, or the question was already answered.'),
       429: errorContent("The platform's AI budget is reached for today."),
@@ -157,6 +163,7 @@ export const registerInterviewDocs = (registry: OpenAPIRegistry) => {
         content: json(successEnvelope(z.object({ sessionId: z.string().uuid(), status: z.literal('ABANDONED') }))),
       },
       401: unauthorized,
+      403: termsRequired,
       404: errorContent('No in-progress interview with that id.'),
     },
   })

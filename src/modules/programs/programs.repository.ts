@@ -159,6 +159,38 @@ export class ProgramsRepo {
     })
   }
 
+  // ── Weekly source check ─────────────────────────────────────────────────
+
+  static listVerifiedForSourceCheck = async () => {
+    return prisma.programs.findMany({
+      where: { verification_status: 'VERIFIED' },
+      // Grouped by site, so requests to one university can be spaced out.
+      orderBy: [{ source_url: 'asc' }],
+      ...withSchool,
+    })
+  }
+
+  static setSourceCheck = async (
+    id: string,
+    check: {
+      status?: ProgramVerificationStatus | undefined
+      note: string
+      failures: number
+      checkedAt: Date
+    },
+    db: Db = prisma,
+  ) => {
+    return db.programs.update({
+      where: { id },
+      data: {
+        last_checked_at: check.checkedAt,
+        source_check_note: check.note,
+        source_check_failures: check.failures,
+        ...(check.status !== undefined && { verification_status: check.status }),
+      },
+    })
+  }
+
   // ── Outdated-data reports ────────────────────────────────────────────────
 
   // Filing a report puts a VERIFIED programme back to NEEDS_RECHECK in the same transaction.

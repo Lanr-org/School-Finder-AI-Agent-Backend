@@ -26,6 +26,14 @@ programsRouter.post(
   ProgramsController.CreateProgram,
 )
 
+// Reads a course page and returns a draft with quotes; saves nothing.
+programsRouter.post(
+  '/extract',
+  canManagePrograms,
+  validate(ProgramsSchemas.extractProgramSchema),
+  ProgramsController.ExtractProgram,
+)
+
 programsRouter.get(
   '/:programId',
   validateParams(ProgramsSchemas.programIdParamsSchema),
@@ -45,6 +53,13 @@ programsRouter.post(
   canManagePrograms,
   validateParams(ProgramsSchemas.programIdParamsSchema),
   ProgramsController.VerifyProgram,
+)
+
+programsRouter.post(
+  '/:programId/source-check',
+  canManagePrograms,
+  validateParams(ProgramsSchemas.programIdParamsSchema),
+  ProgramsController.CheckSource,
 )
 
 // Any signed-in staff member, advisors included: they are the ones who notice stale data.

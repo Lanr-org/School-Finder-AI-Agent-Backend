@@ -5,9 +5,10 @@ import { createPublicStudentId, withUniquePublicId } from '../../common/security
 import { signStudentAccessToken } from '../../common/security/studentToken'
 import { generateRefreshToken } from '../../common/security/token'
 import { hashRefreshToken } from '../../common/security/tokenHash'
-import { StudentIdentityProvider } from '../../generated/prisma/index.js'
+import { MessageChannel, StudentIdentityProvider } from '../../generated/prisma/index.js'
 import { verifyGoogleIdToken } from '../../integrations/google/googleIdToken'
 import StudentLinkService from '../studentLink/studentLink.service'
+import { StudentTermsService } from '../studentPortal/studentTerms'
 import StudentAuthRepo from './studentAuth.repository'
 import type { ClientInfo, GoogleSignInInput, StudentRefreshInput, StudentSummary } from './studentAuth.types'
 
@@ -59,6 +60,10 @@ const StudentAuthService = {
       isNewStudent = true
       logger.info({ studentId: student.public_id }, 'Registered new student via Google sign-in.')
     }
+
+    // The sign-in screen says "By continuing with Google, you agree to our Terms and Privacy
+    // Policy", so signing in is the agreement (recorded once per terms version).
+    await StudentTermsService.Accept(student.id, MessageChannel.WEB)
 
     const tokens = await startSession(student.id, client)
     return { ...tokens, student: toSummary(student), isNewStudent, ...(linkOutcome && { linkOutcome }) }

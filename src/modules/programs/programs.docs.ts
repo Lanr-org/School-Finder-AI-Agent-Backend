@@ -69,6 +69,7 @@ export const registerProgramsDocs = (
     verifiedBy: staffRefSchema.nullable(),
     evidence: z.record(z.string(), z.string()).nullable(),
     lastCheckedAt: z.date().nullable(),
+    sourceCheckNote: z.string().nullable(),
 
     createdAt: z.date(),
     updatedAt: z.date(),
@@ -336,6 +337,84 @@ export const registerProgramsDocs = (
     'ListProgramDataReportsQuery',
     ProgramsSchemas.listReportsQuerySchema,
   )
+
+  const registeredExtractProgramSchema = registry.register(
+    'ProgramExtractRequest',
+    ProgramsSchemas.extractProgramSchema,
+  )
+  const extractResponseSchema = registry.register(
+    'ProgramExtractResponse',
+    successEnvelope(
+      z.object({
+        sourceUrl: z.string().nullable(),
+        draft: z.object({
+          name: z.string().optional(),
+          studyLevel: z.enum(['UNDERGRADUATE', 'POSTGRADUATE', 'DOCTORATE', 'FOUNDATION']).optional(),
+          qualification: z.string().optional(),
+          duration: z.string().optional(),
+          tuitionAmount: z.number().optional(),
+          tuitionCurrency: z.string().optional(),
+          feesAcademicYear: z.string().optional(),
+          intakes: z.array(z.object({ month: z.string(), year: z.number() })).optional(),
+          academicRequirements: z.string().optional(),
+          englishRequirements: z.string().optional(),
+          scholarshipAvailability: z.string().optional(),
+        }),
+        evidence: z.record(z.string(), z.string()),
+        dropped: z.array(z.string()),
+        warnings: z.array(z.string()),
+      }),
+    ),
+  )
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/extract',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Read a course page into a program draft',
+    description:
+      'ADMIN or OPERATIONS. Reads the course page (or pasted page text) with the AI and returns a draft. Every value comes with the exact quote it was read from; values whose quote is not on the page are dropped and listed in `dropped`. Nothing is saved.',
+    request: {
+      body: {
+        required: true,
+        content: { 'application/json': { schema: registeredExtractProgramSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Draft read from the page.',
+        content: { 'application/json': { schema: extractResponseSchema } },
+      },
+      400: errorContent(
+        'Validation failed, or the page could not be read (details.url says why; paste the text instead).',
+      ),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may read course pages.'),
+      429: errorContent('The daily AI limit is reached.'),
+    },
+  })
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/programs/{programId}/source-check',
+    tags: ['Programs'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Re-read the course page now',
+    description:
+      'ADMIN or OPERATIONS. Re-reads sourceUrl and checks every stored evidence quote is still on the page (the same check the weekly job runs). A VERIFIED program whose quotes changed, whose page is gone, whose fees year has passed or that was verified over a year ago becomes NEEDS_RECHECK. Returns the program with sourceCheckNote and lastCheckedAt.',
+    request: { params: registeredProgramIdParamsSchema },
+    responses: {
+      200: {
+        description: 'Checked.',
+        content: { 'application/json': { schema: programResponseSchema } },
+      },
+      400: errorContent('programId is malformed.'),
+      401: errorContent('Bearer token is missing or invalid.'),
+      403: errorContent('Only ADMIN or OPERATIONS may run source checks.'),
+      404: errorContent('Program not found.'),
+    },
+  })
 
   registry.registerPath({
     method: 'post',

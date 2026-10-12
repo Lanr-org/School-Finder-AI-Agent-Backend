@@ -217,6 +217,11 @@ model Student {
   chosen_program_id    String?   @db.Uuid
   study_plan_shared_at DateTime? @db.Timestamptz(6)
 
+  // The one-click agreement (16+, parent/guardian agrees if under 18, terms + privacy). A newer
+  // terms version asks again; see CURRENT_TERMS_VERSION.
+  terms_accepted_at DateTime? @db.Timestamptz(6)
+  terms_version     String?   @db.VarChar(20)
+
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
@@ -583,13 +588,15 @@ model Programs {
   operation_notes String? @db.Text
 
   // Provenance: where the facts came from and when a person last confirmed them
-  source_url          String?                   @db.VarChar(500) // the university's official course page
-  fees_academic_year  String?                   @db.VarChar(9) // e.g. "2026/27"
-  verification_status ProgramVerificationStatus @default(UNVERIFIED)
-  verified_at         DateTime?                 @db.Timestamptz(6)
-  verified_by_id      String?                   @db.Uuid
-  evidence            Json? // { fieldName: "exact quote from source_url" }
-  last_checked_at     DateTime?                 @db.Timestamptz(6) // last automated re-check of source_url
+  source_url            String?                   @db.VarChar(500) // the university's official course page
+  fees_academic_year    String?                   @db.VarChar(9) // e.g. "2026/27"
+  verification_status   ProgramVerificationStatus @default(UNVERIFIED)
+  verified_at           DateTime?                 @db.Timestamptz(6)
+  verified_by_id        String?                   @db.Uuid
+  evidence              Json? // { fieldName: "exact quote from source_url" }
+  last_checked_at       DateTime?                 @db.Timestamptz(6) // last automated re-check of source_url
+  source_check_failures Int                       @default(0) // consecutive failed reads of source_url; reset on success
+  source_check_note     String?                   @db.VarChar(200) // last automated check result in plain words
 
   verified_by  Users?              @relation("ProgramVerifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
   data_reports ProgramDataReport[]
