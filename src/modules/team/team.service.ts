@@ -21,7 +21,8 @@ import { logger } from '../../config/logger'
 import { AuditService } from '../audit/audit.service'
 import { AUDIT_ACTIONS } from '../audit/audit.actions'
 
-const INVITATION_TTL_MINUTES = 60
+// 7 days: partner agents often open the invitation the next day or later.
+const INVITATION_TTL_MINUTES = 7 * 24 * 60
 
 // Allowlisted audit snapshot of a team member — never password/token fields.
 const snapshotMember = (user: {

@@ -30,6 +30,19 @@ describe('email templates', () => {
       expect(email.text).toContain('as Advisor')
       expect(email.text).toContain('expires in 60 minutes')
     })
+
+    it('states whole-day expiries in days', () => {
+      const weekLong = buildInviteEmail({
+        to: 'agent@example.com',
+        fullName: 'Ada',
+        inviterName: 'Tunde',
+        inviteUrl: 'https://app.example.com/set-password/xyz',
+        role: 'ADVISOR',
+        expiresInMinutes: 7 * 24 * 60,
+      })
+      expect(weekLong.text).toContain('expires in 7 days')
+      expect(weekLong.html).toContain('This invitation expires in 7 days.')
+    })
   })
 
   describe('buildPasswordResetEmail', () => {
