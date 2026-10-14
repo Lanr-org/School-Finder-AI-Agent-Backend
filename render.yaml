@@ -17,15 +17,16 @@
 # Not included on purpose: Centrifugo. The staff app polls for notifications and nothing
 # subscribes to Centrifugo; the API skips publishing when CENTRIFUGO_API_KEY is unset.
 
-keyvalue:
-  - name: smetase-redis
+services:
+  # ---- Key Value (Redis) ----
+  - type: keyvalue
+    name: smetase-redis
     region: frankfurt
     plan: free # in memory only: a restart loses queued jobs. Paid: starter (and it keeps data)
     # BullMQ stores its queues here; the default eviction policy could delete them under memory pressure.
     maxmemoryPolicy: noeviction
     ipAllowList: [] # private network only
 
-services:
   # ---- API + workers ----
   - type: web
     name: smetase-api
