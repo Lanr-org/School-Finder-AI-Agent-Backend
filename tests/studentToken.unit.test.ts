@@ -52,3 +52,17 @@ describe('student access tokens', () => {
     expect(codeOf(() => decodeAcessToken(studentToken))).toBe('ACCESS_TOKEN_INVALID')
   })
 })
+
+describe('staff access tokens', () => {
+  it('round-trips a token it signed', () => {
+    const token = generateAcessToken('user-1', 'session-1', 'ADMIN', 0)
+    expect(decodeAcessToken(token)).toMatchObject({ sub: 'user-1', role: 'ADMIN' })
+  })
+
+  it('rejects a token signed with another algorithm, even with the right secret', () => {
+    const token = jwt.sign({ sub: 'user-1', session_Id: 's', role: 'ADMIN', token_version: 0 }, env.jwtSecret, {
+      algorithm: 'HS512',
+    })
+    expect(codeOf(() => decodeAcessToken(token))).toBe('ACCESS_TOKEN_INVALID')
+  })
+})

@@ -4,6 +4,9 @@ import env from '../../config/env'
 import { createError } from '../errors/AppError'
 import { AUTH_ERROR_CODES } from '../errors/errorCodes'
 
+// Pinned on both sign and verify, so a token signed any other way is rejected.
+const ALGORITHM = 'HS256'
+
 const generateAcessToken = (
   sub: string,
   session_Id: string,
@@ -11,13 +14,14 @@ const generateAcessToken = (
   token_version: number,
 ): string => {
   return jwt.sign({ sub, session_Id, role, token_version }, env.jwtSecret, {
+    algorithm: ALGORITHM,
     expiresIn: '15m',
   })
 }
 
 const decodeAcessToken = (token: string) => {
   try {
-    return jwt.verify(token, env.jwtSecret)
+    return jwt.verify(token, env.jwtSecret, { algorithms: [ALGORITHM] })
   } catch (error) {
     if (error instanceof Error) {
       if (
