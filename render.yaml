@@ -119,18 +119,19 @@ services:
         value: none
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Sonnet costs about half of Opus; answers lean on our stored school data, not the model.
       - key: ANTHROPIC_MODEL
-        value: claude-opus-5-5
+        value: claude-sonnet-5-5
 
       # Spending limits (also set a monthly limit in the Anthropic console as the hard ceiling)
       - key: AI_DAILY_REPLIES_PER_STUDENT
-        value: "40"
+        value: "20"
       - key: AI_DAILY_REPLIES_GLOBAL
-        value: "1500"
+        value: "300"
       - key: TELEGRAM_MESSAGES_PER_MINUTE
         value: "20"
       - key: INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY
-        value: "3"
+        value: "1"
 
 # The student app (app.smetase.com), staff app (hub.smetase.com) and landing page (smetase.com)
 # are hosted on Cloudflare Pages, not here. See DEPLOY.md.

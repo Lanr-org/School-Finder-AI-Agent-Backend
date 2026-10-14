@@ -100,6 +100,11 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
 - `TRUST_PROXY=1` is set; leave it, or every student shares one rate-limit bucket.
 - Seeing `AI daily reply cap reached` in Sentry means the platform-wide cap was hit; raise
   `AI_DAILY_REPLIES_GLOBAL` only after checking spend.
+- Smetase is free for students, so AI cost is kept down with settings, not prices. Launch values
+  (in `render.yaml`): `ANTHROPIC_MODEL=claude-sonnet-5-5`, `AI_DAILY_REPLIES_PER_STUDENT=20`,
+  `AI_DAILY_REPLIES_GLOBAL=300`, `INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY=1`, plus a monthly spend
+  limit in the Anthropic console. If the service was created before these changed, set them in the
+  Render dashboard too. After the first week, check what one student costs and raise the caps if it's small.
 
 ## Known gaps
 
