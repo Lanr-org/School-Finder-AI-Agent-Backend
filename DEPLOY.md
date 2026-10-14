@@ -81,7 +81,7 @@ pinger can then be removed.
 3. Fill the prompted secrets: `DATABASE_URL` (Neon, see above), `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`,
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`,
    `SENTRY_DSN`.
-4. Apply. Render builds the image, then the start command runs `npx prisma migrate deploy` and starts
+4. Apply. Render builds the image, then the start command (`npm run start:migrate`) runs `prisma migrate deploy` and starts
    the API (on a paid plan, migrations move to the pre-deploy step). Watch the build log: **the Dockerfile has never been built before**, so this is its first test.
 5. In Cloudflare DNS, add the record Render shows for `api.smetase.com` (a CNAME to the
    `*.onrender.com` address), **DNS-only (grey cloud)**. Wait for the certificate to turn green.

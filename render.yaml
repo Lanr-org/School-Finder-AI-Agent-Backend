@@ -41,9 +41,10 @@ services:
     # /health/live, not /health/ready: ready queries the database, and Render's frequent checks would
     # keep Neon's free compute awake around the clock and use up its monthly hours.
     healthCheckPath: /health/live
-    # Free services have no pre-deploy step, so migrations run just before the server starts. Safe with
-    # one instance only. On a paid plan, go back to: preDeployCommand: npx prisma migrate deploy
-    dockerCommand: sh -c "npx prisma migrate deploy && node dist/src/server.js"
+    # Free services have no pre-deploy step, so migrations run just before the server starts (the
+    # start:migrate script in package.json). Safe with one instance only. On a paid plan, remove this
+    # line and go back to: preDeployCommand: npx prisma migrate deploy
+    dockerCommand: npm run start:migrate
     domains:
       - api.smetase.com
     envVars:
