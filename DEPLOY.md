@@ -140,7 +140,9 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
   service's Events tab. On Pages, roll back from the project's Deployments list.
 - Neon's free plan keeps 6 hours of restore history, not daily backups. Before real students, take a
   `pg_dump` now and then, and do one test restore into a scratch database.
-- `TRUST_PROXY=1` is set; leave it, or every student shares one rate-limit bucket.
+- `TRUST_PROXY=3` is set (Cloudflare + two Render hops). With a wrong value every visitor shares one
+  rate-limit bucket. Check it after infrastructure changes: a failed hub sign-in should show your own
+  public IP in the audit log, not a 10.x or Cloudflare address.
 - Seeing `AI daily reply cap reached` in Sentry means the platform-wide cap was hit; raise
   `AI_DAILY_REPLIES_GLOBAL` only after checking spend.
 - Smetase is free for students, so AI cost is kept down with settings, not prices. Launch values

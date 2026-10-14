@@ -53,8 +53,12 @@ services:
         value: production
       - key: LOG_LEVEL
         value: info
+      # Requests reach the app through Cloudflare and two Render hops; X-Forwarded-For arrives as
+      # "<visitor>, <Cloudflare edge>, <Render 10.x>" (seen in the logs on 2026-10-14). Trusting 3
+      # hops makes req.ip the visitor, so each visitor gets their own rate-limit bucket. With 1,
+      # req.ip was Render's internal address and everyone shared one bucket.
       - key: TRUST_PROXY
-        value: "1" # Render's load balancer; without it every client shares one rate-limit bucket
+        value: "3"
       - key: SENTRY_ENVIRONMENT
         value: production
       - key: SENTRY_DSN
