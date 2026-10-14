@@ -8,7 +8,7 @@ you can make; the rest is in the repo.
 | Piece | Where | Address |
 |---|---|---|
 | API + queue workers (one process) | Render web service (Docker) | `https://api.smetase.com` |
-| PostgreSQL | Render Postgres | private network |
+| PostgreSQL | Neon, free plan (until paid plans) | `*.neon.tech`, TLS |
 | Redis (queues, rate counters) | Render Key Value | private network |
 | Student app (`smetase-web`) | Cloudflare Pages | `https://app.smetase.com` |
 | Staff app (dashboard repo) | Cloudflare Pages | `https://hub.smetase.com` |
@@ -16,6 +16,41 @@ you can make; the rest is in the repo.
 
 The three hostnames must share one registrable domain: the login cookies are `SameSite=strict`, and
 `*.onrender.com` addresses count as different sites, so login would silently fail on them.
+
+## Free setup (until there is money for paid plans)
+
+`render.yaml` is set up to cost nothing for now:
+
+- **Database on Neon** (free, never expires, 1 GB). Render's free Postgres is deleted after 30 days, so it
+  is not used. Neon sleeps after 5 minutes idle and wakes on the next query (a short delay).
+- **API on Render free.** It sleeps after 15 minutes without traffic and takes about a minute to wake, which
+  would delay Telegram replies. Keep it awake with a free pinger (below). Free services have no Shell and
+  no pre-deploy step, so migrations run at start-up and the first admin is created from your laptop.
+- **Redis on Render free Key Value.** In memory only: a restart drops jobs still waiting in the queue.
+- Render gives 750 free hours a month per workspace. One API awake all month uses about 744, so keep
+  it the only free web service there.
+
+### Neon
+
+1. Sign up at neon.com, create a project in **AWS Europe (Frankfurt)** (closest to Render's Frankfurt),
+   Postgres 16 or newer.
+2. Connection details: switch **off** "Connection pooling" and copy the direct connection string. It
+   should end in `?sslmode=require`. This is `DATABASE_URL` in Render. Keep it in your password manager.
+3. Watch Settings, Usage now and then: the free plan has 100 compute hours a month. Compute only runs
+   while the app queries the database, so the pinger must use `/health/live` (no database), never
+   `/health/ready`.
+
+### Keep the API awake
+
+At cron-job.org (free), add a job: `https://api.smetase.com/health/live`, every 10 minutes.
+
+### Moving to paid plans later
+
+Nothing is lost when you upgrade. Either stay on Neon (upgrade the Neon plan) or move the data to Render
+Postgres with `pg_dump` from Neon and `pg_restore` into the new database, then change `DATABASE_URL`.
+For the API, switch the plan to `starter`, put back `preDeployCommand: npx prisma migrate deploy` and
+remove `dockerCommand`. Upgrading free Key Value wipes it (only queued jobs, which is fine), and the
+pinger can then be removed.
 
 ## Before the first deploy
 
@@ -43,11 +78,11 @@ The three hostnames must share one registrable domain: the login cookies are `Sa
    (`School-Finder-AI-Agent-Backend`).
 2. Pick the backend repo, branch `main`. Render reads `render.yaml`. Fix any validation message it shows
    (plan or field names are the likely ones).
-3. Fill the prompted secrets: `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`,
+3. Fill the prompted secrets: `DATABASE_URL` (Neon, see above), `GOOGLE_CLIENT_ID`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`,
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`,
    `SENTRY_DSN`.
-4. Apply. Render builds the image, runs `npx prisma migrate deploy` as the pre-deploy step, then starts
-   the API. Watch the build log: **the Dockerfile has never been built before**, so this is its first test.
+4. Apply. Render builds the image, then the start command runs `npx prisma migrate deploy` and starts
+   the API (on a paid plan, migrations move to the pre-deploy step). Watch the build log: **the Dockerfile has never been built before**, so this is its first test.
 5. In Cloudflare DNS, add the record Render shows for `api.smetase.com` (a CNAME to the
    `*.onrender.com` address), **DNS-only (grey cloud)**. Wait for the certificate to turn green.
 
@@ -73,9 +108,16 @@ Cloudflare dashboard, Workers & Pages, Create, Pages, **Connect to Git**. One pr
 
 ## Create the first admin
 
-On the API service, open the Shell tab and run (once):
+Free services have no Shell, so run this once **from your laptop** (in the backend folder, in your own
+PowerShell window, so the password never goes through a chat). Paste Neon's connection string and choose
+a password (12+ characters with upper and lower case and a number):
 
-    BOOTSTRAP_ADMIN_PASSWORD='a-strong-password-12+' npm run bootstrap:admin -- --email you@smetase.com --name "Your Name"
+    $env:DATABASE_URL = '<Neon connection string>'
+    $env:BOOTSTRAP_ADMIN_PASSWORD = '<a strong password>'
+    npx tsx scripts/bootstrap-admin.ts --email you@smetase.com --name "Your Name"
+    Remove-Item Env:DATABASE_URL, Env:BOOTSTRAP_ADMIN_PASSWORD
+
+On a paid plan you can instead run `npm run bootstrap:admin -- ...` in the service's Shell tab.
 
 It creates the admin and the baseline setting groups and recommendation weights, and refuses to run if an
 admin already exists. Then sign in at `https://hub.smetase.com`, change the password, and invite the team.
@@ -96,7 +138,8 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
 
 - Auto-deploy is off in `render.yaml`, so nothing ships until you press Deploy. Roll back from the
   service's Events tab. On Pages, roll back from the project's Deployments list.
-- Postgres paid plans keep daily backups. Do one test restore into a scratch database before launch.
+- Neon's free plan keeps 6 hours of restore history, not daily backups. Before real students, take a
+  `pg_dump` now and then, and do one test restore into a scratch database.
 - `TRUST_PROXY=1` is set; leave it, or every student shares one rate-limit bucket.
 - Seeing `AI daily reply cap reached` in Sentry means the platform-wide cap was hit; raise
   `AI_DAILY_REPLIES_GLOBAL` only after checking spend.
@@ -109,6 +152,7 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
 ## Known gaps
 
 - The Docker image is unbuilt and the blueprint is unvalidated against Render.
+- On the free setup, a restart drops queued jobs (Key Value is in memory only).
 - The landing page is a holding page (teaser video + "coming soon"); the full site comes later.
 - Centrifugo is not deployed (nothing subscribes to it yet).
 - The two web apps do not report to Sentry yet (planned for after soft launch).

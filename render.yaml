@@ -1,28 +1,26 @@
 # Render Blueprint for Smetase (soft launch). See DEPLOY.md for the step-by-step.
 #
+# FREE SETUP until there is money for paid plans (see "Moving to paid plans" in DEPLOY.md):
+# - PostgreSQL is on Neon's free plan (does not expire), not on Render: Render's free database is
+#   deleted after 30 days. DATABASE_URL is pasted in the dashboard.
+# - The API is a free web service: it sleeps after 15 min without traffic (an outside pinger keeps it
+#   awake), and free services have no pre-deploy step or Shell, so migrations run at start-up.
+# - Key Value is free: in memory only, so a restart drops jobs still waiting in the queue.
+#
 # DRAFT: domain is smetase.com (DNS on Cloudflare). Plan names and field names were written from
 # Render's Blueprint spec but not validated against Render (no CLI here); the dashboard reports
 # any mistake when you create the Blueprint, and each is a one-line fix.
 #
-# What it creates: the API (one process: web server + queue workers), PostgreSQL, Key Value
-# (Redis), and two static sites. Everything sits in one region so the API reaches the database
-# and Redis over Render's private network.
+# What it creates: the API (one process: web server + queue workers) and Key Value (Redis), in one
+# region so the API reaches Redis over Render's private network. The web apps are on Cloudflare.
 #
 # Not included on purpose: Centrifugo. The staff app polls for notifications and nothing
 # subscribes to Centrifugo; the API skips publishing when CENTRIFUGO_API_KEY is unset.
 
-databases:
-  - name: smetase-db
-    region: frankfurt
-    plan: basic-256mb # check the current plan names in the dashboard; paid plans keep daily backups
-    databaseName: smetase
-    user: smetase
-    postgresMajorVersion: "16"
-
 keyvalue:
   - name: smetase-redis
     region: frankfurt
-    plan: starter # the free tier does not persist data, so queued jobs would be lost on restart
+    plan: free # in memory only: a restart loses queued jobs. Paid: starter (and it keeps data)
     # BullMQ stores its queues here; the default eviction policy could delete them under memory pressure.
     maxmemoryPolicy: noeviction
     ipAllowList: [] # private network only
@@ -33,15 +31,18 @@ services:
     name: smetase-api
     runtime: docker
     region: frankfurt
-    plan: starter # must stay on (not free): the queue workers run in this process
+    plan: free # sleeps after 15 min idle; keep it awake with a pinger on /health/live. Paid: starter
     numInstances: 1 # one process for soft launch; the daily AI counters and workers assume it
     dockerfilePath: ./Dockerfile
     dockerContext: .
     branch: main
     autoDeployTrigger: "off" # deploy by hand until we trust the pipeline
-    healthCheckPath: /health/ready
-    # Migrations run once per deploy, before the new version starts. Never on boot.
-    preDeployCommand: npx prisma migrate deploy
+    # /health/live, not /health/ready: ready queries the database, and Render's frequent checks would
+    # keep Neon's free compute awake around the clock and use up its monthly hours.
+    healthCheckPath: /health/live
+    # Free services have no pre-deploy step, so migrations run just before the server starts. Safe with
+    # one instance only. On a paid plan, go back to: preDeployCommand: npx prisma migrate deploy
+    dockerCommand: sh -c "npx prisma migrate deploy && node dist/src/server.js"
     domains:
       - api.smetase.com
     envVars:
@@ -57,11 +58,10 @@ services:
       - key: SENTRY_DSN
         sync: false
 
-      # Data (private network connection strings, filled in by Render)
+      # Data. DATABASE_URL = Neon's direct (not pooled) connection string, with ?sslmode=require.
+      # Redis is filled in by Render over the private network.
       - key: DATABASE_URL
-        fromDatabase:
-          name: smetase-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           type: keyvalue
