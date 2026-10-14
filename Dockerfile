@@ -22,8 +22,9 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# prisma (the CLI) is a production dependency on purpose: the platform runs
-# `npx prisma migrate deploy` from this image as a separate release step, never on boot.
+# prisma (the CLI) is a production dependency on purpose: migrations run from this image, as
+# Render's pre-deploy step on a paid plan, or just before start-up on the free plan
+# (`npm run start:migrate`, see render.yaml).
 # The placeholder URL only lets the postinstall `prisma generate` load its config; the real
 # DATABASE_URL (and every other setting) is injected by the platform at runtime.
 COPY package.json package-lock.json prisma.config.ts ./

@@ -82,7 +82,7 @@ pinger can then be removed.
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`,
    `SENTRY_DSN`.
 4. Apply. Render builds the image, then the start command (`npm run start:migrate`) runs `prisma migrate deploy` and starts
-   the API (on a paid plan, migrations move to the pre-deploy step). Watch the build log: **the Dockerfile has never been built before**, so this is its first test.
+   the API (on a paid plan, migrations move to the pre-deploy step). Watch the build log for errors.
 5. In Cloudflare DNS, add the record Render shows for `api.smetase.com` (a CNAME to the
    `*.onrender.com` address), **DNS-only (grey cloud)**. Wait for the certificate to turn green.
 
@@ -151,9 +151,8 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
 
 ## Known gaps
 
-- The Docker image is unbuilt and the blueprint is unvalidated against Render.
+- First deployed 2026-10-14 on the free setup: the Docker image builds on Render and the Blueprint validates.
 - On the free setup, a restart drops queued jobs (Key Value is in memory only).
-- The landing page is a holding page (teaser video + "coming soon"); the full site comes later.
 - Centrifugo is not deployed (nothing subscribes to it yet).
 - The two web apps do not report to Sentry yet (planned for after soft launch).
 - One API instance only; scaling out needs the workers split into their own service first.
