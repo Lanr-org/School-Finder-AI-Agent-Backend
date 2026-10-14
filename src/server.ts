@@ -5,7 +5,7 @@ import http from 'http'
 import env from './config/env'
 import { logger } from './config/logger'
 import { flushSentry } from './config/sentry'
-import prisma from './database/prisma'
+import prisma, { warmUpDatabase } from './database/prisma'
 import { closeRedis } from './database/redis.js'
 import { TelegramBotService } from './integrations/telegram/services/telegram-bot.service'
 import {
@@ -27,7 +27,8 @@ import { createShutdown } from './shutdown'
 
 const server = http.createServer(app)
 
-server.listen(env.port, async () => {
+// Wake the database first, so the first request after a deploy doesn't time out on Neon.
+void warmUpDatabase().then(() => server.listen(env.port, async () => {
   logger.info({ port: env.port }, 'Server started')
 
   try {
@@ -45,7 +46,7 @@ server.listen(env.port, async () => {
   if (env.telegramWebhookUrl) {
     await TelegramBotService.registerWebhook()
   }
-})
+}))
 
 const shutdown = createShutdown({
   server,
