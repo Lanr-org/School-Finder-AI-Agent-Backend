@@ -91,4 +91,6 @@ export type UpdateInvitationAndUserPasswordData = {
   newPasswordHash: string
   acceptedAt: Date
   invitationId: string
+  // ADVISOR invitees get a default advisor profile (AVAILABLE, no cap) so they can be assigned students.
+  createAdvisorProfile: boolean
 }

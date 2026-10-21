@@ -246,6 +246,14 @@ class AuthRepo {
           accepted_at: data.acceptedAt,
         },
       })
+      if (data.createAdvisorProfile) {
+        // Upsert: an admin may already have created the profile while the invite was pending.
+        await tx.advisorProfile.upsert({
+          where: { user_id: data.userId },
+          create: { user_id: data.userId },
+          update: {},
+        })
+      }
     })
   }
 }

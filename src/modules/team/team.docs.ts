@@ -21,6 +21,9 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     status: statusEnum,
     expiresAt: z.date(),
     sentAt: z.date(),
+    emailSent: z.boolean().openapi({
+      description: 'False when the email provider refused the message; the account exists, so resend it.',
+    }),
   })
 
   const resendDataSchema = z.object({
@@ -29,6 +32,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     expiresAt: z.date(),
     sentAt: z.date(),
     sendCount: z.number(),
+    emailSent: z.boolean(),
   })
 
   const memberDataSchema = z.object({
@@ -51,7 +55,21 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
   )
   const memberResponseSchema = registry.register(
     'TeamMemberResponse',
-    successEnvelope(memberDataSchema),
+    successEnvelope(
+      memberDataSchema.extend({
+        lastLoginAt: z.date().nullable(),
+        invitation: z
+          .object({
+            id: z.string().uuid().openapi({ description: 'Use as :invitationId to resend or cancel.' }),
+            expiresAt: z.date(),
+            sentAt: z.date(),
+            lastSentAt: z.date(),
+            sendCount: z.number(),
+          })
+          .nullable()
+          .openapi({ description: 'The open invitation; null unless the member is INVITED.' }),
+      }),
+    ),
   )
   const memberListResponseSchema = registry.register(
     'TeamMemberListResponse',
@@ -108,7 +126,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     tags: ['Team'],
     security: [{ bearerAuth: [] }],
     summary: 'Invite a team member',
-    description: `${ADMIN_ONLY} Creates the user as INVITED and emails a one-time set-password link that expires in 60 minutes. The link token is never returned. Audited as team.invitation_created.`,
+    description: `${ADMIN_ONLY} Creates the user as INVITED and emails a one-time set-password link that expires in 7 days. The link token is never returned. Audited as team.invitation_created.`,
     request: {
       body: {
         required: true,
@@ -133,7 +151,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     tags: ['Team'],
     security: [{ bearerAuth: [] }],
     summary: 'Resend an invitation',
-    description: `${ADMIN_ONLY} Issues a fresh link (the previous one stops working), resets the 60-minute expiry, and increments the send count. Audited as team.invitation_resent.`,
+    description: `${ADMIN_ONLY} Issues a fresh link (the previous one stops working), resets the 7-day expiry, and increments the send count. Audited as team.invitation_resent.`,
     request: { params: invitationIdParams },
     responses: {
       200: {

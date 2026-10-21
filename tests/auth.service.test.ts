@@ -1322,6 +1322,7 @@ describe('AuthService.ResetPasswordFromInvitation', () => {
         userId: 'user-uuid',
         newPasswordHash: 'hashed-new-password',
         invitationId: 'invite-uuid',
+        createAdvisorProfile: true,
       }),
       expect.anything(),
     )
@@ -1335,6 +1336,26 @@ describe('AuthService.ResetPasswordFromInvitation', () => {
       before_data: { status: 'INVITED' },
       after_data: { status: 'ACTIVE' },
     })
+  })
+
+  it('does not create an advisor profile for non-ADVISOR invitees', async () => {
+    hashOpaqueTokenMock.mockReturnValue('a'.repeat(64))
+    teamRepoMock.FindTeamInvitation.mockResolvedValue({
+      ...invitationRecord,
+      user: { ...invitationRecord.user, role: 'OPERATIONS' },
+    } as unknown as Awaited<ReturnType<typeof TeamRepo.FindTeamInvitation>>)
+    hashPasswordMock.mockResolvedValue('hashed-new-password')
+    authRepoMock.UpdateInvitationAndUserPassword.mockResolvedValue(undefined)
+
+    await AuthService.ResetPasswordFromInvitation('a'.repeat(128), {
+      newPassword: 'NewCorrectPass123',
+      confirmNewPassword: 'NewCorrectPass123',
+    })
+
+    expect(authRepoMock.UpdateInvitationAndUserPassword).toHaveBeenCalledWith(
+      expect.objectContaining({ createAdvisorProfile: false }),
+      expect.anything(),
+    )
   })
 
   it('rejects password confirm mismatch', async () => {

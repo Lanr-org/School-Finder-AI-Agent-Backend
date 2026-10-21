@@ -7,6 +7,7 @@ import AuthRepo from '../src/modules/auth/auth.repository'
 import TeamRepo from '../src/modules/team/team.repository'
 import { TeamService } from '../src/modules/team/team.service'
 import { AuditRepo } from '../src/modules/audit/audit.repository'
+import EmailProvider from '../src/integrations/email/email.provider'
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ vi.mock('../src/modules/team/team.repository', () => ({
     CancelInvitation: vi.fn(),
     findAllUsers: vi.fn(),
     findUserByPublicId: vi.fn(),
+    findOpenInvitationForUser: vi.fn(),
     updateUser: vi.fn(),
     updateUserStatus: vi.fn(),
   },
@@ -742,6 +744,36 @@ describe('TeamService.Invitation — unit', () => {
       email: 'dave@example.com',
     })
   })
+
+  it('reports emailSent: true when the email goes out', async () => {
+    const newUser = makeNewUser()
+    authRepoMock.findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(makeAdminUser())
+    teamRepoMock.CreateInviteUser.mockResolvedValue({ user: newUser, invite: makeNewInvite(newUser.id) })
+
+    const result = await TeamService.Invitation(adminClaims, {
+      fullName: 'Carol New',
+      email: 'carol@example.com',
+      role: 'ADVISOR',
+    })
+
+    expect(result.emailSent).toBe(true)
+  })
+
+  it('still creates the account but reports emailSent: false when the email fails', async () => {
+    const newUser = makeNewUser()
+    authRepoMock.findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(makeAdminUser())
+    teamRepoMock.CreateInviteUser.mockResolvedValue({ user: newUser, invite: makeNewInvite(newUser.id) })
+    vi.mocked(EmailProvider.send).mockRejectedValueOnce(new Error('SMTP refused'))
+
+    const result = await TeamService.Invitation(adminClaims, {
+      fullName: 'Carol New',
+      email: 'carol@example.com',
+      role: 'ADVISOR',
+    })
+
+    expect(result.emailSent).toBe(false)
+    expect(result.publicId).toBe('USR-0099')
+  })
 })
 
 describe('TeamService.ResendInvitation — unit', () => {
@@ -803,6 +835,18 @@ describe('TeamService.ResendInvitation — unit', () => {
       expect.anything(),
     )
   })
+
+  it('reports emailSent: false when the resend email fails', async () => {
+    const inv = makeInvitation()
+    teamRepoMock.findInvitationById.mockResolvedValue(inv)
+    teamRepoMock.UpdateTeamInvitation.mockResolvedValue({ ...inv, send_count: 2 })
+    authRepoMock.findUser.mockResolvedValue(makeAdminUser())
+    vi.mocked(EmailProvider.send).mockRejectedValueOnce(new Error('SMTP refused'))
+
+    const result = await TeamService.ResendInvitation(adminClaims, 'invite-uuid-0001')
+
+    expect(result.emailSent).toBe(false)
+  })
 })
 
 describe('TeamService.CancelInvitation — unit', () => {
@@ -855,6 +899,26 @@ describe('TeamService.GetMember — unit', () => {
     expect(result).not.toHaveProperty('password_hash')
     expect(result).not.toHaveProperty('token_version')
     expect(result.publicId).toBe('USR-0001')
+  })
+
+  it('returns no invitation for an active member and skips the lookup', async () => {
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdminUser())
+    const result = await TeamService.GetMember('USR-0001')
+
+    expect(result.invitation).toBeNull()
+    expect(teamRepoMock.findOpenInvitationForUser).not.toHaveBeenCalled()
+  })
+
+  it('returns the open invitation for an invited member, without the token hash', async () => {
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeInvitedUser())
+    const { user: _user, ...invite } = makeInvitation({ send_count: 2 })
+    teamRepoMock.findOpenInvitationForUser.mockResolvedValue(invite)
+
+    const result = await TeamService.GetMember('USR-0002')
+
+    expect(teamRepoMock.findOpenInvitationForUser).toHaveBeenCalledWith('invited-user-uuid-0001')
+    expect(result.invitation).toMatchObject({ id: 'invite-uuid-0001', sendCount: 2 })
+    expect(result.invitation).not.toHaveProperty('token_hash')
   })
 })
 

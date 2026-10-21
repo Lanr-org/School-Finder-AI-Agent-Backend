@@ -13,6 +13,8 @@ const COLORS = {
 
 // Brand fonts load in Apple Mail and a few others; Gmail and Outlook fall back to the system stack.
 const FONT_URL = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=Unbounded:wght@600;800&display=swap'
+// White-on-black PNG served by the landing site (smetase-landing/public/email/logo.png): mail clients don't show SVG.
+const LOGO_URL = 'https://smetase.com/email/logo.png'
 const FONT = "'Instrument Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 const DISPLAY = "'Unbounded','Arial Black',Helvetica,Arial,sans-serif"
 
@@ -56,7 +58,9 @@ const renderEmail = (email: EmailContent): string => `<!doctype html>
         <td align="center" style="padding:40px 16px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:${COLORS.paper};font-family:${FONT};">
             <tr>
-              <td style="padding:28px 36px;background:${COLORS.ink};font-family:${DISPLAY};font-size:22px;line-height:26px;font-weight:800;letter-spacing:-0.03em;color:${COLORS.paper};">Smetase</td>
+              <td style="padding:28px 36px;background:${COLORS.ink};font-family:${DISPLAY};font-size:22px;line-height:26px;font-weight:800;letter-spacing:-0.03em;color:${COLORS.paper};">
+                <img src="${LOGO_URL}" width="152" height="28" alt="Smetase" style="display:block;border:0;outline:none;text-decoration:none;width:152px;height:28px;color:${COLORS.paper};">
+              </td>
             </tr>
             <tr>
               <td height="6" style="padding:0;background:${COLORS.blue};font-size:0;line-height:0;">&nbsp;</td>
@@ -85,7 +89,7 @@ const renderEmail = (email: EmailContent): string => `<!doctype html>
               <td style="padding:0 36px 48px;">
                 <table role="presentation" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td style="padding:2px 0 2px 14px;border-left:3px solid ${COLORS.ink};font-size:14px;line-height:22px;color:${COLORS.muted};">${email.note}</td>
+                    <td style="padding:0;font-size:14px;line-height:22px;color:${COLORS.muted};">${email.note}</td>
                   </tr>
                 </table>
               </td>

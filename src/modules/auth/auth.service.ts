@@ -787,6 +787,7 @@ class AuthService {
             newPasswordHash,
             acceptedAt: acceptedAt,
             invitationId: invitationToken.id,
+            createAdvisorProfile: invitationToken.user.role === 'ADVISOR',
           },
           tx,
         ),

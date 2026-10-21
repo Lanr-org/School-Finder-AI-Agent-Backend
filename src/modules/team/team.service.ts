@@ -96,6 +96,7 @@ export class TeamService {
     // Fetch the inviter's name from the DB (auth.sub is already validated by AuthenticateMiddleware)
     const admin = await AuthRepo.findUser({ id: auth.sub })
 
+    let emailSent = true
     try {
       await EmailProvider.send(
         buildInviteEmail({
@@ -108,6 +109,7 @@ export class TeamService {
         }),
       )
     } catch (error) {
+      emailSent = false
       logger.error(
         {
           err: error,
@@ -118,7 +120,7 @@ export class TeamService {
       )
     }
 
-    // Always return the result regardless of whether the email succeeded
+    // The account exists either way; emailSent tells the hub to offer a resend.
     return {
       publicId: user.public_id,
       fullName: user.full_name,
@@ -127,6 +129,7 @@ export class TeamService {
       status: user.status,
       expiresAt: invite.expires_at,
       sentAt: invite.sent_at,
+      emailSent,
     }
   }
 
@@ -187,6 +190,7 @@ export class TeamService {
     const setUrl = new URL(`/set-password/${rawToken}`, env.frontendUrl).href
     const admin = await AuthRepo.findUser({ id: auth.sub })
 
+    let emailSent = true
     try {
       await EmailProvider.send(
         buildInviteEmail({
@@ -199,6 +203,7 @@ export class TeamService {
         }),
       )
     } catch (error) {
+      emailSent = false
       logger.error(
         {
           err: error,
@@ -215,6 +220,7 @@ export class TeamService {
       expiresAt: updated.expires_at,
       sentAt: updated.last_sent_at,
       sendCount: updateData.count,
+      emailSent,
     }
   }
 
@@ -284,6 +290,12 @@ export class TeamService {
       throw createError('Team member not found', 404, {}, 'NOT_FOUND')
     }
 
+    // The hub needs the invitation's id to resend or cancel it.
+    const invite =
+      user.status === 'INVITED'
+        ? await TeamRepo.findOpenInvitationForUser(user.id)
+        : null
+
     return {
       publicId: user.public_id,
       fullName: user.full_name,
@@ -292,6 +304,16 @@ export class TeamService {
       status: user.status,
       phone: user.phone ?? null,
       createdAt: user.created_at,
+      lastLoginAt: user.last_login_at ?? null,
+      invitation: invite
+        ? {
+            id: invite.id,
+            expiresAt: invite.expires_at,
+            sentAt: invite.sent_at,
+            lastSentAt: invite.last_sent_at,
+            sendCount: invite.send_count,
+          }
+        : null,
     }
   }
 
