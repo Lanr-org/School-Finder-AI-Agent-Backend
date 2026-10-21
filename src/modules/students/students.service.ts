@@ -170,6 +170,15 @@ export class StudentsService {
     if (!advisor || advisor.role !== 'ADVISOR') {
       throw createError('Advisor not found', 404, {}, 'NOT_FOUND')
     }
+    // A disabled (or not yet accepted) advisor can't sign in to work the student.
+    if (advisor.status !== 'ACTIVE') {
+      throw createError(
+        'Advisor account is not active',
+        409,
+        { advisorId: advisor.public_id, status: advisor.status },
+        'CONFLICT',
+      )
+    }
 
     // No profile yet means unlimited capacity — advisor profiles are opt-in,
     // don't break assignment for advisors created before this feature shipped.

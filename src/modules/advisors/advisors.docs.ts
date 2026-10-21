@@ -24,6 +24,9 @@ export const registerAdvisorsDocs = (
     advisorId: z.string(),
     fullName: z.string(),
     email: z.string().email(),
+    status: z.enum(['INVITED', 'ACTIVE', 'DISABLED']).openapi({
+      description: 'Account status. Only ACTIVE advisors can be assigned students.',
+    }),
     availability: z.enum(['AVAILABLE', 'LIMITED', 'UNAVAILABLE']),
     maxCapacity: z.number().nullable(),
     activeStudentCount: z.number(),

@@ -388,6 +388,25 @@ describe('Students API — PATCH /api/v1/students/:studentId/advisor', () => {
     expect(studentsRepoMock.assignAdvisorToStudent).not.toHaveBeenCalled()
   })
 
+  it('returns 409 when the advisor account is disabled', async () => {
+    const authToken = asAdmin()
+    teamRepoMock.findUserByPublicId.mockResolvedValue(
+      makeUser({ id: ADVISOR_ID, role: 'ADVISOR', status: 'DISABLED' }) as any,
+    )
+
+    const res = await request(app)
+      .patch('/api/v1/students/STU-8440/advisor')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ advisorId: 'USR-946B7F71768D' })
+
+    expect(res.status).toBe(409)
+    expect(body(res).error).toMatchObject({
+      code: 'CONFLICT',
+      details: { status: 'DISABLED' },
+    })
+    expect(studentsRepoMock.assignAdvisorToStudent).not.toHaveBeenCalled()
+  })
+
   it('unassigns the advisor when advisorId is null', async () => {
     const authToken = asAdmin()
     studentsRepoMock.unassignAdvisorFromStudent.mockResolvedValue(

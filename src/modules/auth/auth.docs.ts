@@ -693,7 +693,7 @@ export const registerAuthDocs = (registry: OpenAPIRegistry) => {
     tags: ['Auth'],
     summary: 'Accept an invitation and set password',
     description:
-      "Accepts a pending invitation by setting the user's password and activating the account. The raw token is hashed before lookup. Rejects if the invitation is already accepted, canceled, or expired.",
+      "Accepts a pending invitation by setting the user's password and activating the account. ADVISOR invitees also get a default advisor profile (AVAILABLE, no capacity limit) so they can be assigned students straight away. The raw token is hashed before lookup. Rejects if the invitation is already accepted, canceled, or expired.",
     request: {
       params: registeredResetPasswordTokenParamsSchema,
       body: {

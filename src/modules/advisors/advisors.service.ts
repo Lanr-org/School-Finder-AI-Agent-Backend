@@ -15,9 +15,9 @@ import type {
   UpdateAdvisorProfileDTO,
   UpdateOwnAvailabilityDTO,
 } from './advisors.types.js'
-import type { AdvisorProfile } from '../../generated/prisma/index.js'
+import type { AdvisorProfile, UserStatus } from '../../generated/prisma/index.js'
 
-type ProfileUser = { public_id: string; full_name: string; email: string }
+type ProfileUser = { public_id: string; full_name: string; email: string; status: UserStatus }
 type WorkloadCounts = {
   activeStudentCount: number
   pendingFollowUpCount: number
@@ -31,6 +31,8 @@ const toProfileResponse = (
   advisorId: user.public_id,
   fullName: user.full_name,
   email: user.email,
+  // Account status, so the hub can leave DISABLED advisors out of the assign list.
+  status: user.status,
   availability: profile.availability,
   maxCapacity: profile.max_capacity,
   activeStudentCount: counts.activeStudentCount,
