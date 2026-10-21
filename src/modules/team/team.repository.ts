@@ -89,6 +89,14 @@ class TeamRepo {
     })
   }
 
+  // The invitation an INVITED user can still accept (not accepted, not canceled).
+  static async findOpenInvitationForUser(userId: string) {
+    return prisma.team_Invitations.findFirst({
+      where: { user_id: userId, accepted_at: null, canceled_at: null },
+      orderBy: { last_sent_at: 'desc' },
+    })
+  }
+
   static async findUserByPublicId(publicId: string) {
     return prisma.users.findFirst({
       where: { public_id: publicId },
@@ -115,7 +123,7 @@ class TeamRepo {
   static async findUsersByIds(ids: string[]) {
     return prisma.users.findMany({
       where: { id: { in: ids } },
-      select: { id: true, public_id: true, full_name: true, email: true },
+      select: { id: true, public_id: true, full_name: true, email: true, status: true },
     })
   }
 
