@@ -138,8 +138,8 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
 
 - Auto-deploy is off in `render.yaml`, so nothing ships until you press Deploy. Roll back from the
   service's Events tab. On Pages, roll back from the project's Deployments list.
-- Neon's free plan keeps 6 hours of restore history, not daily backups. Before real students, take a
-  `pg_dump` now and then, and do one test restore into a scratch database.
+- Neon's free plan keeps 6 hours of restore history, not daily backups. The weekly GitHub backup
+  below covers the rest.
 - `TRUST_PROXY=3` is set (Cloudflare + two Render hops). With a wrong value every visitor shares one
   rate-limit bucket. Check it after infrastructure changes: a failed hub sign-in should show your own
   public IP in the audit log, not a 10.x or Cloudflare address.
@@ -150,6 +150,32 @@ admin already exists. Then sign in at `https://hub.smetase.com`, change the pass
   `AI_DAILY_REPLIES_GLOBAL=300`, `INTERVIEW_SESSIONS_PER_STUDENT_PER_DAY=1`, plus a monthly spend
   limit in the Anthropic console. If the service was created before these changed, set them in the
   Render dashboard too. After the first week, check what one student costs and raise the caps if it's small.
+
+## Backups
+
+`.github/workflows/neon-backup.yml` runs every Sunday at 02:00 UTC (and on demand from the Actions tab,
+"Neon backup" -> Run workflow). It takes a `pg_dump` of Neon, encrypts it with AES-256, keeps it as a
+workflow artifact for 90 days, then restores it into a throwaway Postgres and prints row counts. A red run
+means either the backup or the restore test failed; GitHub emails you.
+
+One-time setup, in the backend repo on GitHub: Settings -> Secrets and variables -> Actions -> New
+repository secret:
+
+- `NEON_DATABASE_URL`: the same direct Neon string as Render's `DATABASE_URL`.
+- `BACKUP_PASSPHRASE`: a long random passphrase. Save it in the password manager first: without it the
+  backups cannot be opened.
+
+Then run it once by hand and check the restore step's row counts. Scheduled workflows only run from
+`main`, and GitHub pauses them after 60 days without commits to the repo (re-enable from the Actions tab).
+
+To restore: download the artifact from the run's page and unzip it, then (with Git Bash's `gpg` and a
+PostgreSQL client of the same major version as Neon):
+
+    gpg --decrypt --output smetase.dump smetase-YYYY-MM-DD.dump.gpg
+    pg_restore --no-owner --no-privileges --dbname="<target database URL>" smetase.dump
+
+Restore into a new, empty database (a new Neon branch or project), check it, then point `DATABASE_URL`
+at it. Never restore over the live database.
 
 ## Known gaps
 

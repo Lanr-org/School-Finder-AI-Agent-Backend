@@ -1,0 +1,104 @@
+# Weekly backup of the production Neon database.
+#
+# Neon's free plan keeps only 6 hours of history, so this takes a pg_dump every
+# Sunday, encrypts it, keeps it as a workflow artifact for 90 days, then restores
+# it into a throwaway Postgres to prove the backup actually works.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   NEON_DATABASE_URL  Neon direct (unpooled) connection string with ?sslmode=require
+#   BACKUP_PASSPHRASE  long random passphrase; keep a copy in the password manager,
+#                      without it the backups cannot be opened
+#
+# Restore steps are in DEPLOY.md under "Backups".
+
+name: Neon backup
+
+on:
+  schedule:
+    - cron: '0 2 * * 0' # Sundays 02:00 UTC (03:00 Lagos)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Set the NEON_DATABASE_URL and BACKUP_PASSPHRASE repository secrets."
+            exit 1
+          fi
+
+      - name: Install a pg_dump that matches the server
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq postgresql-client; }
+          # The first query also wakes Neon from sleep; retry while it starts.
+          for attempt in 1 2 3 4 5; do
+            num=$(psql "$DATABASE_URL" -tAc 'SHOW server_version_num' 2>/dev/null) && break
+            sleep 5
+          done
+          if [ -z "$num" ]; then
+            echo "::error::Could not reach the database."
+            exit 1
+          fi
+          major=$((num / 10000))
+          echo "Server is PostgreSQL $major"
+          sudo apt-get install -yq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -yq "postgresql-client-$major"
+          echo "PG_MAJOR=$major" >> "$GITHUB_ENV"
+          echo "PG_BIN=/usr/lib/postgresql/$major/bin" >> "$GITHUB_ENV"
+
+      - name: Dump and encrypt
+        run: |
+          name="smetase-$(date -u +%Y-%m-%d)"
+          "$PG_BIN/pg_dump" "$DATABASE_URL" --format=custom --no-owner --no-privileges --file="$name.dump"
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 --output "$name.dump.gpg" "$name.dump"
+          rm "$name.dump"
+          ls -lh "$name.dump.gpg"
+          echo "BACKUP_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: ${{ env.BACKUP_NAME }}.dump.gpg
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0 # already compressed and encrypted
+
+      - name: Test restore into a scratch database
+        run: |
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+            --decrypt --output restore.dump "$BACKUP_NAME.dump.gpg"
+          docker run -d --name scratch -e POSTGRES_PASSWORD=scratch -p 5432:5432 "postgres:$PG_MAJOR" >/dev/null
+          for attempt in $(seq 1 30); do
+            docker exec scratch pg_isready -U postgres >/dev/null 2>&1 && break
+            sleep 2
+          done
+          scratch=postgresql://postgres:scratch@localhost:5432/postgres
+          "$PG_BIN/pg_restore" --no-owner --no-privileges --exit-on-error --dbname="$scratch" restore.dump
+          migrations=$("$PG_BIN/psql" "$scratch" -tAc 'SELECT count(*) FROM _prisma_migrations')
+          echo "Restored with $migrations migrations. Row counts:"
+          "$PG_BIN/psql" "$scratch" -c "SELECT 'users' AS table, count(*) FROM users
+            UNION ALL SELECT 'students', count(*) FROM students
+            UNION ALL SELECT 'schools', count(*) FROM schools
+            UNION ALL SELECT 'programs', count(*) FROM programs
+            UNION ALL SELECT 'conversation_messages', count(*) FROM conversation_messages"
+          if [ "$migrations" -lt 1 ]; then
+            echo "::error::Restored database has no migrations; the backup looks empty."
+            exit 1
+          fi
+          rm restore.dump
