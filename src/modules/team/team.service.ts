@@ -24,6 +24,28 @@ import { AUDIT_ACTIONS } from '../audit/audit.actions'
 // 7 days: partner agents often open the invitation the next day or later.
 const INVITATION_TTL_MINUTES = 7 * 24 * 60
 
+const forbidden = (message: string) =>
+  createError(message, 403, {}, 'FORBIDDEN')
+
+// Owner protection. Nobody but the owner touches the owner's account, and only the owner
+// manages other admins (edit, disable, delete an invite). Advisors and operations stay open
+// to every admin. Editing your own details is allowed; changing your own access is not.
+const assertCanManageMember = async (
+  target: { id: string; role: string; is_owner: boolean },
+  auth: AccessTokenClaims,
+) => {
+  if (target.id === auth.sub) return
+  if (target.is_owner) {
+    throw forbidden("The owner's account can only be changed by the owner")
+  }
+  if (target.role === 'ADMIN') {
+    const actor = await AuthRepo.findUser({ id: auth.sub })
+    if (!actor?.is_owner) {
+      throw forbidden('Only the owner can change another admin')
+    }
+  }
+}
+
 // Allowlisted audit snapshot of a team member — never password/token fields.
 const snapshotMember = (user: {
   public_id: string
@@ -226,7 +248,7 @@ export class TeamService {
 
   // ── DELETE /team/invitations/:invitationId ─────────────────────────────────
   static CancelInvitation = async (
-    _auth: AccessTokenClaims,
+    auth: AccessTokenClaims,
     invitationId: string,
   ) => {
     const invitation = await TeamRepo.findInvitationById(invitationId)
@@ -234,6 +256,8 @@ export class TeamService {
     if (!invitation) {
       throw createError('Invitation not found', 404, {}, 'NOT_FOUND')
     }
+
+    await assertCanManageMember(invitation.user, auth)
 
     if (invitation.accepted_at) {
       throw createError(
@@ -277,6 +301,7 @@ export class TeamService {
       email: u.email,
       role: u.role,
       status: u.status,
+      isOwner: u.is_owner,
       phone: u.phone ?? null,
       createdAt: u.created_at,
     }))
@@ -302,6 +327,7 @@ export class TeamService {
       email: user.email,
       role: user.role,
       status: user.status,
+      isOwner: user.is_owner,
       phone: user.phone ?? null,
       createdAt: user.created_at,
       lastLoginAt: user.last_login_at ?? null,
@@ -318,12 +344,18 @@ export class TeamService {
   }
 
   // ── PATCH /team/:userId ────────────────────────────────────────────────────
-  static UpdateMember = async (userId: string, data: UpdateTeamMemberData) => {
+  static UpdateMember = async (
+    userId: string,
+    data: UpdateTeamMemberData,
+    auth: AccessTokenClaims,
+  ) => {
     const user = await TeamRepo.findUserByPublicId(userId)
 
     if (!user) {
       throw createError('Team member not found', 404, {}, 'NOT_FOUND')
     }
+
+    await assertCanManageMember(user, auth)
 
     if (user.status === 'ACTIVE' && data.email !== undefined) {
       throw createError(`Can't edit an active user's email`, 400, {}, 'VALIDATION_ERROR')
@@ -354,12 +386,19 @@ export class TeamService {
   static UpdateMemberStatus = async (
     userId: string,
     data: UpdateTeamMemberStatusData,
+    auth: AccessTokenClaims,
   ) => {
     const user = await TeamRepo.findUserByPublicId(userId)
 
     if (!user) {
       throw createError('Team member not found', 404, {}, 'NOT_FOUND')
     }
+
+    // Disabling yourself could leave nobody able to sign in.
+    if (user.id === auth.sub) {
+      throw forbidden("You can't change your own account status")
+    }
+    await assertCanManageMember(user, auth)
 
     if (user.status === data.status) {
       throw createError(

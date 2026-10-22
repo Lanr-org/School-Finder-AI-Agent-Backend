@@ -45,6 +45,7 @@ const toSafeUser = (user: {
   role: string
   status: string
   last_login_at: Date | null
+  is_owner: boolean
   created_at: Date
   updated_at: Date
 }) => {
@@ -56,6 +57,7 @@ const toSafeUser = (user: {
     role: user.role,
     status: user.status,
     last_login_at: user.last_login_at,
+    is_owner: user.is_owner,
     created_at: user.created_at,
     updated_at: user.updated_at,
   }

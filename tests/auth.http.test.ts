@@ -122,6 +122,7 @@ const activeUser = {
   last_login_at: null,
   password_changed_at: null,
   token_version: 0,
+  is_owner: false,
   created_at: new Date('2026-06-01T00:00:00.000Z'),
   updated_at: new Date('2026-06-01T00:00:00.000Z'),
 } as const
@@ -574,6 +575,7 @@ describe('GET /api/v1/auth/me', () => {
       role: 'ADMIN',
       status: 'ACTIVE',
       last_login_at: null,
+      is_owner: false,
       created_at: new Date('2026-06-01T00:00:00.000Z'),
       updated_at: new Date('2026-06-01T00:00:00.000Z'),
     })
@@ -622,6 +624,7 @@ describe('PATCH /api/v1/auth/me', () => {
       role: 'ADMIN',
       status: 'ACTIVE',
       last_login_at: null,
+      is_owner: false,
       created_at: new Date('2026-06-01T00:00:00.000Z'),
       updated_at: new Date('2026-06-20T00:00:00.000Z'),
     })
@@ -715,6 +718,7 @@ describe('POST /api/v1/auth/change-password', () => {
         role: 'ADMIN',
         status: 'ACTIVE',
         last_login_at: null,
+        is_owner: false,
         created_at: new Date('2026-06-01T00:00:00.000Z'),
         updated_at: new Date('2026-06-21T00:00:00.000Z'),
       },

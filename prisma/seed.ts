@@ -84,6 +84,8 @@ const seedBootstrapAdmin = async (): Promise<void> => {
       password_hash: passwordHash,
       role: 'ADMIN',
       status: 'ACTIVE',
+      // The first admin owns the workspace (seed refuses to run when an admin exists).
+      is_owner: true,
       password_changed_at: new Date(),
     },
     select: {

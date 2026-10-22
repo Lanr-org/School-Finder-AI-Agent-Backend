@@ -21,6 +21,9 @@ const safeUserSchema = z.object({
   role: z.enum(['ADMIN', 'ADVISOR', 'OPERATIONS']),
   status: z.enum(['INVITED', 'ACTIVE', 'DISABLED']),
   last_login_at: z.date().nullable(),
+  is_owner: z.boolean().openapi({
+    description: 'The protected owner account: only the owner can change it or other admins.',
+  }),
   created_at: z.date(),
   updated_at: z.date(),
 })

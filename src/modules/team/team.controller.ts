@@ -122,6 +122,7 @@ export class TeamController {
       const result = await TeamService.UpdateMember(
         userId,
         req.body as UpdateTeamMemberData,
+        req.auth as AccessTokenClaims,
       )
       res.status(200).json(
         successResponse(true, 'Team member updated', result, {
@@ -144,6 +145,7 @@ export class TeamController {
       const result = await TeamService.UpdateMemberStatus(
         userId,
         req.body as UpdateTeamMemberStatusData,
+        req.auth as AccessTokenClaims,
       )
       res.status(200).json(
         successResponse(true, 'Team member status updated', result, {

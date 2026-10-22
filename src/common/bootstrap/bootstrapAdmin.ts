@@ -69,6 +69,8 @@ export const bootstrapAdmin = async (
       password_hash: await hashPassword(input.password),
       role: 'ADMIN',
       status: 'ACTIVE',
+      // The first admin owns the workspace (there is never an admin before this one).
+      is_owner: true,
       password_changed_at: new Date(),
     },
     select: { email: true, public_id: true },

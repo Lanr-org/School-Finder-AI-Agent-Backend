@@ -66,6 +66,7 @@ const makeAdminUser = (overrides: Record<string, unknown> = {}) => ({
   role: 'ADMIN' as const,
   status: 'ACTIVE' as const,
   token_version: 0,
+  is_owner: false,
   last_login_at: null as Date | null,
   password_changed_at: null as Date | null,
   created_at: new Date('2024-01-01'),

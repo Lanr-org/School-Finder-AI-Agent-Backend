@@ -75,6 +75,7 @@ const makeAdminUser = (overrides: Record<string, unknown> = {}) => ({
   role: 'ADMIN' as const,
   status: 'ACTIVE' as const,
   token_version: 0,
+  is_owner: false,
   last_login_at: null as Date | null,
   password_changed_at: null as Date | null,
   created_at: new Date('2024-01-01'),
@@ -106,6 +107,7 @@ const makeInvitedUser = (overrides: Record<string, unknown> = {}) => ({
   role: 'ADVISOR' as const,
   status: 'INVITED' as const,
   token_version: 0,
+  is_owner: false,
   last_login_at: null as Date | null,
   password_changed_at: null as Date | null,
   created_at: new Date(),
@@ -138,6 +140,7 @@ const makeNewUser = () => ({
   role: 'ADVISOR' as const,
   status: 'INVITED' as const,
   token_version: 0,
+  is_owner: false,
   last_login_at: null as Date | null,
   password_changed_at: null as Date | null,
   created_at: new Date(),
@@ -159,6 +162,15 @@ const makeNewInvite = (userId: string) => ({
 
 const makeAdminToken = () =>
   generateAcessToken(ADMIN_ID, SESSION_ID, 'ADMIN', 0)
+
+// Another team member (not the signed-in admin): an ACTIVE advisor any admin may manage.
+const makeAdvisorMember = (overrides: Record<string, unknown> = {}) =>
+  makeAdminUser({
+    id: 'advisor-user-uuid-0002',
+    public_id: 'USR-0002',
+    role: 'ADVISOR' as const,
+    ...overrides,
+  })
 
 // ── HTTP Test Suites ──────────────────────────────────────────────────────────
 
@@ -620,9 +632,9 @@ describe('Team API — PATCH /api/v1/team/:userId/status', () => {
   })
 
   it('returns 200 when status is changed', async () => {
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdminUser())
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdvisorMember())
     teamRepoMock.updateUserStatus.mockResolvedValue({
-      ...makeAdminUser(),
+      ...makeAdvisorMember(),
       status: 'DISABLED' as const,
     })
 
@@ -640,7 +652,7 @@ describe('Team API — PATCH /api/v1/team/:userId/status', () => {
       expect.objectContaining({
         action: 'team.member_status_changed',
         entity_type: 'user',
-        entity_id: 'USR-0001',
+        entity_id: 'USR-0002',
         actor_id: ADMIN_ID,
         before_data: { status: 'ACTIVE' },
         after_data: { status: 'DISABLED' },
@@ -650,7 +662,7 @@ describe('Team API — PATCH /api/v1/team/:userId/status', () => {
   })
 
   it('returns 409 if status is already the same', async () => {
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdminUser()) // status: ACTIVE
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdvisorMember()) // status: ACTIVE
 
     const token = makeAdminToken()
     const res = await request(app)
@@ -926,9 +938,144 @@ describe('TeamService.UpdateMemberStatus — unit', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('throws CONFLICT when status is already the target value', async () => {
-    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdminUser()) // status: ACTIVE
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdvisorMember()) // status: ACTIVE
     await expect(
-      TeamService.UpdateMemberStatus('USR-0001', { status: 'ACTIVE' }),
+      TeamService.UpdateMemberStatus('USR-0002', { status: 'ACTIVE' }, { sub: ADMIN_ID, role: 'ADMIN' } as any),
     ).rejects.toMatchObject({ code: 'CONFLICT', statusCode: 409 })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Team API — owner protection', () => {
+  const owner = () =>
+    makeAdminUser({ id: 'owner-user-uuid-0001', public_id: 'USR-OWNER', is_owner: true })
+  const otherAdmin = () =>
+    makeAdminUser({ id: 'admin-user-uuid-0002', public_id: 'USR-0002' })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authRepoMock.findAuthSessionById.mockResolvedValue(makeSession())
+  })
+
+  // Signed in as ADMIN_ID; isOwner decides whether that admin is the owner.
+  const signedInAs = (isOwner: boolean) => {
+    authRepoMock.findUser.mockResolvedValue(makeAdminUser({ is_owner: isOwner }))
+    return makeAdminToken()
+  }
+
+  it('blocks another admin from disabling the owner', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(owner())
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-OWNER/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'DISABLED' })
+
+    expect(res.status).toBe(403)
+    expect(body(res).error?.code).toBe('FORBIDDEN')
+    expect(teamRepoMock.updateUserStatus).not.toHaveBeenCalled()
+  })
+
+  it('blocks another admin from editing the owner', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(owner())
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-OWNER')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fullName: 'Not The Owner' })
+
+    expect(res.status).toBe(403)
+    expect(teamRepoMock.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('blocks a non-owner admin from disabling another admin', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(otherAdmin())
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-0002/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'DISABLED' })
+
+    expect(res.status).toBe(403)
+    expect(teamRepoMock.updateUserStatus).not.toHaveBeenCalled()
+  })
+
+  it('lets the owner disable another admin', async () => {
+    const token = signedInAs(true)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(otherAdmin())
+    teamRepoMock.updateUserStatus.mockResolvedValue({
+      ...otherAdmin(),
+      status: 'DISABLED' as const,
+    })
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-0002/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'DISABLED' })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('lets any admin disable an advisor', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdvisorMember())
+    teamRepoMock.updateUserStatus.mockResolvedValue({
+      ...makeAdvisorMember(),
+      status: 'DISABLED' as const,
+    })
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-0002/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'DISABLED' })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks anyone, the owner included, from changing their own status', async () => {
+    const token = signedInAs(true)
+    teamRepoMock.findUserByPublicId.mockResolvedValue(makeAdminUser({ is_owner: true }))
+
+    const res = await request(app)
+      .patch('/api/v1/team/USR-0001/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'DISABLED' })
+
+    expect(res.status).toBe(403)
+    expect(teamRepoMock.updateUserStatus).not.toHaveBeenCalled()
+  })
+
+  it('blocks a non-owner admin from deleting an invited admin', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findInvitationById.mockResolvedValue(
+      makeInvitation({ user: makeInvitedUser({ role: 'ADMIN' }) }) as any,
+    )
+
+    const res = await request(app)
+      .delete('/api/v1/team/invitations/invite-uuid-0001')
+      .set('Authorization', `Bearer ${token}`)
+
+    expect(res.status).toBe(403)
+    expect(teamRepoMock.CancelInvitation).not.toHaveBeenCalled()
+  })
+
+  it('shows who the owner is in the member list', async () => {
+    const token = signedInAs(false)
+    teamRepoMock.findAllUsers.mockResolvedValue([owner(), otherAdmin()])
+
+    const res = await request(app)
+      .get('/api/v1/team')
+      .set('Authorization', `Bearer ${token}`)
+
+    const b = body<{ publicId: string; isOwner: boolean }[]>(res)
+    expect(res.status).toBe(200)
+    expect(b.data.map((m) => [m.publicId, m.isOwner])).toEqual([
+      ['USR-OWNER', true],
+      ['USR-0002', false],
+    ])
   })
 })
