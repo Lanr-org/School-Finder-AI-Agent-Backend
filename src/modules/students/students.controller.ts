@@ -150,6 +150,26 @@ export class StudentsController {
     }
   }
 
+  // ── DELETE /students/:studentId ──────────────────────────────────────────
+  static DeleteStudent = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await StudentsService.DeleteStudent(
+        req.params['studentId'] as string,
+      )
+      res.status(200).json(
+        successResponse(true, 'Student deleted successfully', result, {
+          requestId: req.id,
+        }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // ── GET /students/:studentId/status-history ─────────────────────────────
   static GetStatusHistory = async (
     req: Request,

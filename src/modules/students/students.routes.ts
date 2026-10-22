@@ -59,6 +59,14 @@ studentsRouter.patch(
   StudentsController.UpdateStatus,
 )
 
+// Permanent delete of the student and all their chats. ADMIN only.
+studentsRouter.delete(
+  '/:studentId',
+  requireRole('ADMIN'),
+  validateParams(StudentsSchemas.studentIdParamsSchema),
+  StudentsController.DeleteStudent,
+)
+
 studentsRouter.get(
   '/:studentId/status-history',
   canAccessStudents,

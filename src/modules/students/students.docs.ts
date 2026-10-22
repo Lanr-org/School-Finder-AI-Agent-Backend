@@ -179,6 +179,37 @@ export const registerStudentsDocs = (registry: OpenAPIRegistry) => {
   })
 
   registry.registerPath({
+    method: 'delete',
+    path: '/api/v1/students/{studentId}',
+    tags: ['Students'],
+    security: [{ bearerAuth: [] }],
+    summary: 'Permanently delete a student',
+    description:
+      'Requires a bearer access token. Allowed roles: ADMIN only. Hard delete, cannot be undone: removes the student, their contact details, every conversation and message, notes, follow-ups, applications, recommendations, shortlist, journey ticks, Study Plan links, sessions and linked accounts, plus staff notifications about them. If the student messages the bot again they start as a new student. Audited as student.deleted (public ID, status and counts only, no personal data).',
+    request: { params: registeredStudentIdParamsSchema },
+    responses: {
+      200: {
+        description: 'Student deleted.',
+        content: {
+          'application/json': {
+            schema: successEnvelope(
+              z.object({
+                publicId: z.string(),
+                conversationsDeleted: z.number(),
+                messagesDeleted: z.number(),
+              }),
+            ),
+          },
+        },
+      },
+      400: errorContent('Path parameter validation failed.'),
+      401: unauthorized,
+      403: errorContent('Only ADMIN may delete students.'),
+      404: errorContent('Student not found.'),
+    },
+  })
+
+  registry.registerPath({
     method: 'patch',
     path: '/api/v1/students/{studentId}/status',
     tags: ['Students'],

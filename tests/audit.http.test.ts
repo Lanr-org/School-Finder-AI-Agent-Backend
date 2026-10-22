@@ -203,7 +203,7 @@ describe('Audit API — GET /api/v1/audit-logs', () => {
 
   it('returns 400 for an unknown action', async () => {
     const res = await request(app)
-      .get('/api/v1/audit-logs?action=student.deleted')
+      .get('/api/v1/audit-logs?action=student.teleported')
       .set('Authorization', `Bearer ${signIn('ADMIN')}`)
 
     expect(res.status).toBe(400)

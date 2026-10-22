@@ -28,6 +28,7 @@ vi.mock('../src/modules/students/students.repository', () => ({
     assignAdvisorToStudent: vi.fn(),
     unassignAdvisorFromStudent: vi.fn(),
     updateStudentStatus: vi.fn(),
+    deleteStudent: vi.fn(),
   },
 }))
 
@@ -778,5 +779,71 @@ describe('Students API — journey', () => {
       .delete('/api/v1/students/STU-8440/journey/checks/NOPE')
       .set('Authorization', `Bearer ${authToken}`)
     expect(res.status).toBe(400)
+  })
+})
+
+describe('Students API — DELETE /api/v1/students/:studentId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(
+      makeStudent({ contact_id: 'contact-uuid-1' }) as any,
+    )
+    studentsRepoMock.deleteStudent.mockResolvedValue({
+      conversationsDeleted: 1,
+      messagesDeleted: 12,
+    })
+  })
+
+  it('is forbidden for an ADVISOR, even on their own student', async () => {
+    const authToken = asAdvisor()
+
+    const res = await request(app)
+      .delete('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(403)
+    expect(studentsRepoMock.deleteStudent).not.toHaveBeenCalled()
+  })
+
+  it('deletes the student and audits it without personal data for ADMIN', async () => {
+    const authToken = asAdmin()
+
+    const res = await request(app)
+      .delete('/api/v1/students/STU-8440')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(200)
+    expect(body(res).data).toEqual({
+      publicId: 'STU-8440',
+      conversationsDeleted: 1,
+      messagesDeleted: 12,
+    })
+    expect(studentsRepoMock.deleteStudent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'student-uuid-1', contact_id: 'contact-uuid-1' }),
+      expect.anything(),
+    )
+    expect(auditRepoMock.record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'student.deleted',
+        entity_type: 'student',
+        entity_id: 'STU-8440',
+        actor_id: ADMIN_ID,
+        before_data: { publicId: 'STU-8440', status: 'ASSIGNED', source: 'TELEGRAM' },
+        metadata: { conversationsDeleted: 1, messagesDeleted: 12 },
+      }),
+    )
+  })
+
+  it('returns 404 when the student does not exist', async () => {
+    const authToken = asAdmin()
+    studentsRepoMock.findStudentByPublicId.mockResolvedValue(null)
+
+    const res = await request(app)
+      .delete('/api/v1/students/STU-0000')
+      .set('Authorization', `Bearer ${authToken}`)
+
+    expect(res.status).toBe(404)
+    expect(studentsRepoMock.deleteStudent).not.toHaveBeenCalled()
   })
 })
