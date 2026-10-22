@@ -299,6 +299,30 @@ export class StudentsService {
     )
   }
 
+  // ── DELETE /students/:studentId (ADMIN only, enforced by the route) ─────
+  // Hard delete for test accounts and data-deletion requests. The audit row keeps no
+  // personal data: only the public ID, status and how much was removed.
+  static DeleteStudent = async (publicId: string) => {
+    const student = await StudentsService.getStudentByPublicId(publicId)
+
+    logger.info({ studentId: student.id }, 'Deleting student and all their data.')
+    const result = await AuditService.withAudit(
+      (tx) => StudentsRepo.deleteStudent(student, tx),
+      (counts) => ({
+        action: AUDIT_ACTIONS.STUDENT_DELETED,
+        entityType: 'student',
+        entityId: student.public_id,
+        before: {
+          publicId: student.public_id,
+          status: student.status,
+          source: student.contact.provider_type,
+        },
+        metadata: counts,
+      }),
+    )
+    return { publicId: student.public_id, ...result }
+  }
+
   // ── GET /students/:studentId/status-history ─────────────────────────────
   static GetStatusHistory = async (
     publicId: string,

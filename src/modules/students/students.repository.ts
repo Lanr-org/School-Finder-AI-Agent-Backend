@@ -151,4 +151,40 @@ export class StudentsRepo {
 
     return { students, total }
   }
+
+  /**
+   * Permanently removes a student and everything about them. Deleting the contact cascades to
+   * the student, conversations, messages, notes, follow-ups, applications, recommendations,
+   * shortlist, sessions and linked accounts. Staff notifications that point at the student or
+   * one of their chats are removed too, since their text names the student.
+   */
+  static deleteStudent = async (
+    student: { id: string; public_id: string; contact_id: string },
+    outerTx?: Tx,
+  ) => {
+    return withTx(outerTx, async (tx) => {
+      const conversations = await tx.conversations.findMany({
+        where: { student_id: student.id },
+        select: { id: true, public_id: true },
+      })
+      const messagesDeleted = await tx.conversationMessages.count({
+        where: { conversation_id: { in: conversations.map((c) => c.id) } },
+      })
+      const links = [
+        `/students/${student.public_id}`,
+        ...conversations.map((c) => `/conversations/${c.public_id}`),
+      ]
+      await tx.notification.deleteMany({
+        where: {
+          OR: [
+            { link: { in: links } },
+            ...links.map((link) => ({ link: { startsWith: `${link}/` } })),
+            { body: { contains: `(${student.public_id})` } },
+          ],
+        },
+      })
+      await tx.contacts.delete({ where: { id: student.contact_id } })
+      return { conversationsDeleted: conversations.length, messagesDeleted }
+    })
+  }
 }
