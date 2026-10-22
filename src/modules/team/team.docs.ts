@@ -41,6 +41,9 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     email: z.string().email(),
     role: roleEnum,
     status: statusEnum,
+    isOwner: z.boolean().openapi({
+      description: 'The protected owner account. Only the owner can change it or other admins.',
+    }),
     phone: z.string().nullable(),
     createdAt: z.date(),
   })
@@ -173,7 +176,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     tags: ['Team'],
     security: [{ bearerAuth: [] }],
     summary: 'Cancel an invitation',
-    description: `${ADMIN_ONLY} Cancels a pending invitation and deletes the invited (never-activated) account. Audited as team.invitation_canceled, with a snapshot of the invitee.`,
+    description: `${ADMIN_ONLY} Cancels a pending invitation and deletes the invited (never-activated) account. Only the owner can delete an invited ADMIN (403 otherwise). Audited as team.invitation_canceled, with a snapshot of the invitee.`,
     request: { params: invitationIdParams },
     responses: {
       200: {
@@ -231,7 +234,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     tags: ['Team'],
     security: [{ bearerAuth: [] }],
     summary: 'Update a team member',
-    description: `${ADMIN_ONLY} Updates name, phone, or (for accounts that are not yet ACTIVE) email; at least one field is required. Role changes are not supported here. Audited as team.member_updated.`,
+    description: `${ADMIN_ONLY} Updates name, phone, or (for accounts that are not yet ACTIVE) email; at least one field is required. Role changes are not supported here. Owner rules: nobody but the owner can change the owner's account, and only the owner can change another ADMIN (403 otherwise). Audited as team.member_updated.`,
     request: {
       params: userIdParams,
       body: {
@@ -263,7 +266,7 @@ export const registerTeamDocs = (registry: OpenAPIRegistry) => {
     tags: ['Team'],
     security: [{ bearerAuth: [] }],
     summary: 'Activate or disable a team member',
-    description: `${ADMIN_ONLY} Sets status to ACTIVE or DISABLED. A disabled account is rejected on its next authenticated request. Audited as team.member_status_changed.`,
+    description: `${ADMIN_ONLY} Sets status to ACTIVE or DISABLED. A disabled account is rejected on its next authenticated request. Nobody can change their own status. Owner rules: nobody but the owner can change the owner's account, and only the owner can change another ADMIN (403 otherwise). Audited as team.member_status_changed.`,
     request: {
       params: userIdParams,
       body: {

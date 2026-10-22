@@ -297,6 +297,7 @@ describe('POST /api/v1/programs/:programId/source-check', () => {
       role: 'ADVISOR',
       status: 'ACTIVE',
       token_version: 0,
+      is_owner: false,
       last_login_at: null,
       password_changed_at: null,
       created_at: new Date(),
