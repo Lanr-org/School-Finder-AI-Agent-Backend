@@ -28,6 +28,7 @@ export class SchoolsRepo {
         admission_friendliness_score: data.admissionFriendlinessScore ?? null,
         admission_friendliness_notes: data.admissionFriendlinessNotes ?? null,
         ranking_reputation_notes: data.rankingReputationNotes ?? null,
+        visa_sponsor_lookup_name: data.visaSponsorLookupName ?? null,
       },
     })
   }
@@ -85,6 +86,7 @@ export class SchoolsRepo {
         ...(data.admissionFriendlinessScore !== undefined && { admission_friendliness_score: data.admissionFriendlinessScore }),
         ...(data.admissionFriendlinessNotes !== undefined && { admission_friendliness_notes: data.admissionFriendlinessNotes }),
         ...(data.rankingReputationNotes !== undefined && { ranking_reputation_notes: data.rankingReputationNotes }),
+        ...(data.visaSponsorLookupName !== undefined && { visa_sponsor_lookup_name: data.visaSponsorLookupName }),
       },
     })
   }
@@ -121,6 +123,7 @@ export class SchoolsRepo {
         visa_sponsor_status: true,
         visa_sponsor_register_name: true,
         visa_sponsor_note: true,
+        visa_sponsor_lookup_name: true,
       },
     })
   }
