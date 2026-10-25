@@ -26,6 +26,7 @@ export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
     admissionFriendlinessScore: z.number().nullable(),
     admissionFriendlinessNotes: z.string().nullable(),
     rankingReputationNotes: z.string().nullable(),
+    visaSponsorLookupName: z.string().nullable(),
     visaSponsorStatus: z.enum(['LICENSED', 'NOT_LISTED', 'UNKNOWN']),
     visaSponsorSource: z.string().nullable(),
     visaSponsorCheckedAt: z.date().nullable(),

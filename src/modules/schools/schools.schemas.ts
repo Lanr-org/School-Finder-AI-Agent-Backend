@@ -36,6 +36,8 @@ export class SchoolsSchemas {
     admissionFriendlinessScore: z.number().int().min(0).max(100).nullable().optional(),
     admissionFriendlinessNotes: z.string().trim().max(5000).nullable().optional(),
     rankingReputationNotes: z.string().trim().max(5000).nullable().optional(),
+    // The name on the UK sponsor register when it differs from the everyday name.
+    visaSponsorLookupName: z.string().trim().min(2).max(200).nullable().optional(),
   })
 
   static updateSchoolSchema = SchoolsSchemas.createSchoolSchema.partial().refine(

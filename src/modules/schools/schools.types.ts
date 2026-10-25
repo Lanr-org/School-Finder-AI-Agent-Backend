@@ -18,6 +18,7 @@ export interface CreateSchoolDTO {
   admissionFriendlinessScore?: number | null
   admissionFriendlinessNotes?: string | null
   rankingReputationNotes?: string | null
+  visaSponsorLookupName?: string | null
 }
 
 export interface UpdateSchoolDTO {
@@ -38,6 +39,7 @@ export interface UpdateSchoolDTO {
   admissionFriendlinessScore?: number | null
   admissionFriendlinessNotes?: string | null
   rankingReputationNotes?: string | null
+  visaSponsorLookupName?: string | null
 }
 
 export interface ListSchoolsQueryDTO {

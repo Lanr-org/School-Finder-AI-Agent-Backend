@@ -122,6 +122,7 @@ const makeSchool = (overrides: Record<string, unknown> = {}) => ({
   visa_sponsor_checked_at: null as Date | null,
   visa_sponsor_register_name: null as string | null,
   visa_sponsor_note: null as string | null,
+  visa_sponsor_lookup_name: null as string | null,
 
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
@@ -422,6 +423,39 @@ describe('Schools API — PATCH /api/v1/schools/:schoolId', () => {
     })
     // Snapshots use the public shape: no internal UUID leaks into the log.
     expect(JSON.stringify(row?.before_data)).not.toContain('school-uuid-0001')
+  })
+
+  it('sets and clears the name used on the UK sponsor register, with an audit row', async () => {
+    schoolsRepoMock.findSchoolByPublicId.mockResolvedValue(makeSchool())
+    schoolsRepoMock.updateSchool.mockResolvedValue(makeSchool({ visa_sponsor_lookup_name: 'University of Ulster' }))
+
+    const token = makeAdminToken()
+    const res = await request(app)
+      .patch('/api/v1/schools/SCH-1001')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ visaSponsorLookupName: '  University of Ulster ' })
+
+    expect(res.status).toBe(200)
+    expect(body<{ visaSponsorLookupName: string }>(res).data.visaSponsorLookupName).toBe('University of Ulster')
+    expect(schoolsRepoMock.updateSchool).toHaveBeenCalledWith(
+      'school-uuid-0001',
+      { visaSponsorLookupName: 'University of Ulster' },
+      expect.anything(),
+    )
+    const row = auditRepoMock.record.mock.calls[0]?.[1]
+    expect(row?.action).toBe('school.updated')
+    expect(row?.after_data).toMatchObject({ visaSponsorLookupName: 'University of Ulster' })
+
+    const cleared = await request(app)
+      .patch('/api/v1/schools/SCH-1001')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ visaSponsorLookupName: null })
+    expect(cleared.status).toBe(200)
+    expect(schoolsRepoMock.updateSchool).toHaveBeenLastCalledWith(
+      'school-uuid-0001',
+      { visaSponsorLookupName: null },
+      expect.anything(),
+    )
   })
 
   it('returns 400 if no updatable field is provided', async () => {
