@@ -119,6 +119,43 @@ describe('matching', () => {
     })
   })
 
+  describe('with a staff-set register name', () => {
+    // Real rows (23 Oct 2026) whose register names differ from the names students know.
+    const renamed = buildRegisterIndex(
+      parseRegisterCsv(
+        [
+          'Sponsor Name,Town/City,Additional Locations,Sponsor Type,Status,Route,Immigration Compliance',
+          'University of Ulster,Coleraine, ,Higher Education Institution (HEI),Student Sponsor - Track Record,Student, ',
+          'London and South East University Group,Various,University of Greenwich International College (Embedded College),Higher Education Institution (HEI),Student Sponsor - Track Record,Student, ',
+          'Coventry University,Coventry, ,Higher Education Institution (HEI),Student Sponsor - Track Record,Student, ',
+        ].join('\n'),
+      ),
+    )
+
+    it('cannot match the everyday name on its own', () => {
+      expect(matchSchool({ name: 'Ulster University', city: 'Belfast' }, renamed).kind).toBe('unmatched')
+    })
+
+    it('matches through the register name, even in another town', () => {
+      const match = matchSchool(
+        { name: 'University of Greenwich', city: 'London', visa_sponsor_lookup_name: 'London and South East University Group' },
+        renamed,
+      )
+      expect(match).toMatchObject({ kind: 'matched', row: { sponsorName: 'London and South East University Group' } })
+      expect(
+        matchSchool({ name: 'Ulster University', city: 'Belfast', visa_sponsor_lookup_name: 'University of Ulster' }, renamed),
+      ).toMatchObject({ kind: 'matched', row: { sponsorName: 'University of Ulster' } })
+    })
+
+    it('falls back to the school name when the register name finds nothing', () => {
+      const match = matchSchool(
+        { name: 'Coventry University', city: 'Coventry', visa_sponsor_lookup_name: 'Coventry Uni Typo' },
+        renamed,
+      )
+      expect(match).toMatchObject({ kind: 'matched', row: { sponsorName: 'Coventry University' } })
+    })
+  })
+
   it('recognises UK country spellings', () => {
     expect(isUkCountry(' United Kingdom ')).toBe(true)
     expect(isUkCountry('England')).toBe(true)
@@ -165,6 +202,7 @@ describe('SponsorRegisterService.SyncUk', () => {
     visa_sponsor_status: 'UNKNOWN' as 'UNKNOWN' | 'LICENSED' | 'NOT_LISTED',
     visa_sponsor_register_name: null as string | null,
     visa_sponsor_note: null as string | null,
+    visa_sponsor_lookup_name: null as string | null,
     ...overrides,
   })
 

@@ -54,16 +54,28 @@ const pickByTown = (rows: SponsorRegisterRow[], city: string): SponsorMatch => {
 
 // Exact normalised name first. Otherwise a single register name that extends ours, or that ours
 // extends ("University of X" vs "University of X London"). Two or more candidates: never guess.
-export const matchSchool = (school: { name: string; city: string }, index: RegisterIndex): SponsorMatch => {
-  const name = normalizeSponsorName(school.name)
+const matchName = (schoolName: string, city: string, index: RegisterIndex): SponsorMatch => {
+  const name = normalizeSponsorName(schoolName)
   if (name === '') return { kind: 'unmatched', reason: 'no-match' }
 
   const exact = index.get(name)
-  if (exact) return pickByTown(exact, school.city)
+  if (exact) return pickByTown(exact, city)
 
   const candidates = [...index.keys()].filter((key) => key.startsWith(`${name} `) || name.startsWith(`${key} `))
-  if (candidates.length === 1) return pickByTown(index.get(candidates[0]!)!, school.city)
+  if (candidates.length === 1) return pickByTown(index.get(candidates[0]!)!, city)
   return { kind: 'unmatched', reason: candidates.length > 1 ? 'ambiguous' : 'no-match' }
+}
+
+// A staff-set register name ("University of Ulster") is tried first; the everyday name is the fallback.
+export const matchSchool = (
+  school: { name: string; city: string; visa_sponsor_lookup_name?: string | null },
+  index: RegisterIndex,
+): SponsorMatch => {
+  if (school.visa_sponsor_lookup_name) {
+    const byLookup = matchName(school.visa_sponsor_lookup_name, school.city, index)
+    if (byLookup.kind === 'matched') return byLookup
+  }
+  return matchName(school.name, school.city, index)
 }
 
 // What agents should know about the sponsor's standing, e.g. "Probationary Sponsor · Subject To Action Plan".
