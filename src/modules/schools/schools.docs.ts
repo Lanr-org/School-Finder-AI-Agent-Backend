@@ -89,7 +89,7 @@ export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
     security: [{ bearerAuth: [] }],
     summary: 'List schools',
     description:
-      'Requires a bearer access token. Returns a paginated, filterable list of schools for admin/operations staff — filterable by country, city, school type, partner status, record status, and free-text name search.',
+      'Requires a bearer access token. Returns a paginated, filterable list of schools for admin/operations staff — filterable by country, city, school type, partner status, record status, and free-text search across name, city, and country. The country filter is case-insensitive.',
     request: {
       query: registeredListSchoolsQuerySchema,
     },
@@ -106,6 +106,32 @@ export const registerSchoolsDocs = (registry: OpenAPIRegistry) => {
         description: 'Bearer token is missing or invalid.',
         content: { 'application/json': { schema: errorResponseSchema } },
       },
+    },
+  })
+
+  const schoolCountriesResponseSchema = registry.register(
+    'SchoolCountriesResponse',
+    successEnvelope(
+      z.object({
+        countries: z.array(z.object({ country: z.string(), schools: z.number() })),
+      }),
+    ),
+  )
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/schools/countries',
+    tags: ['Schools'],
+    security: [{ bearerAuth: [] }],
+    summary: 'List school countries',
+    description:
+      'Requires a bearer access token. Any staff role. Distinct countries in the school directory (case/spacing variants merged), alphabetical, with the number of schools in each — options for the directory country filter.',
+    responses: {
+      200: {
+        description: 'Countries retrieved successfully.',
+        content: { 'application/json': { schema: schoolCountriesResponseSchema } },
+      },
+      401: errorContent('Bearer token is missing or invalid.'),
     },
   })
 

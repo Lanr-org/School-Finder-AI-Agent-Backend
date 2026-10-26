@@ -83,6 +83,26 @@ export class SchoolsService {
     }
   }
 
+  // ── GET /schools/countries ────────────────────────────────────────────────
+  // Rows that differ only by casing/spacing ("Canada", "canada ") are merged
+  // so the filter shows each country once; the list filter is case-insensitive.
+  static ListCountries = async () => {
+    const rows = await SchoolsRepo.countSchoolsByCountry()
+    const merged = new Map<string, { country: string; schools: number }>()
+    for (const row of rows) {
+      const country = row.country.trim()
+      if (!country) continue
+      const key = country.toLowerCase()
+      const count = typeof row._count === 'object' ? (row._count._all ?? 0) : 0
+      const entry = merged.get(key) ?? { country, schools: 0 }
+      entry.schools += count
+      merged.set(key, entry)
+    }
+    return {
+      countries: [...merged.values()].sort((a, b) => a.country.localeCompare(b.country)),
+    }
+  }
+
   // ── GET /schools/:schoolId ────────────────────────────────────────────────
   static GetSchool = async (schoolId: string) => {
     const school = await SchoolsRepo.findSchoolByPublicId(schoolId)

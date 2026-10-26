@@ -39,13 +39,20 @@ export class SchoolsRepo {
 
   static listSchools = async (filters: ListSchoolsQueryDTO) => {
     const where: Prisma.SchoolsWhereInput = {
-      ...(filters.country !== undefined && { country: filters.country }),
+      ...(filters.country !== undefined && {
+        country: { equals: filters.country, mode: 'insensitive' },
+      }),
       ...(filters.city !== undefined && { city: filters.city }),
       ...(filters.schoolType !== undefined && { school_type: filters.schoolType }),
       ...(filters.partnerStatus !== undefined && { partner_status: filters.partnerStatus }),
       ...(filters.recordStatus !== undefined && { record_status: filters.recordStatus }),
+      // Matches the UI's "Search school, city, or country".
       ...(filters.search !== undefined && {
-        name: { contains: filters.search, mode: 'insensitive' },
+        OR: [
+          { name: { contains: filters.search, mode: 'insensitive' } },
+          { city: { contains: filters.search, mode: 'insensitive' } },
+          { country: { contains: filters.search, mode: 'insensitive' } },
+        ],
       }),
     }
 
@@ -60,6 +67,16 @@ export class SchoolsRepo {
     ])
 
     return { schools, total }
+  }
+
+  // Distinct countries for the directory's country filter, with how many
+  // schools (active or not) each has.
+  static countSchoolsByCountry = async () => {
+    return prisma.schools.groupBy({
+      by: ['country'],
+      orderBy: { country: 'asc' },
+      _count: { _all: true },
+    })
   }
 
   static updateSchool = async (id: string, data: UpdateSchoolDTO, db: Db = prisma) => {

@@ -27,6 +27,9 @@ schoolsRouter.post(
   SchoolsController.CreateSchool,
 )
 
+// Options for the directory's country filter. Declared before /:schoolId.
+schoolsRouter.get('/countries', SchoolsController.ListCountries)
+
 // Runs daily on its own; this is "check now" (also after adding UK schools). Declared before /:schoolId.
 schoolsRouter.post('/sponsor-register/sync', canManageSchools, SchoolsController.SyncSponsorRegister)
 

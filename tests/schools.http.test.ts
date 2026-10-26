@@ -22,6 +22,7 @@ vi.mock('../src/modules/schools/schools.repository', () => ({
     createSchool: vi.fn(),
     findSchoolByPublicId: vi.fn(),
     listSchools: vi.fn(),
+    countSchoolsByCountry: vi.fn(),
     updateSchool: vi.fn(),
     softDeleteSchool: vi.fn(),
     findActiveDuplicate: vi.fn(),
@@ -329,6 +330,34 @@ describe('Schools API — GET /api/v1/schools', () => {
 
   it('returns 401 if not authenticated', async () => {
     const res = await request(app).get('/api/v1/schools')
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('Schools API — GET /api/v1/schools/countries', () => {
+  it('merges casing/spacing variants and sorts alphabetically', async () => {
+    schoolsRepoMock.countSchoolsByCountry.mockResolvedValue([
+      { country: 'Canada', _count: { _all: 3 } },
+      { country: 'Ireland', _count: { _all: 2 } },
+      { country: 'canada ', _count: { _all: 1 } },
+      { country: 'Australia', _count: { _all: 4 } },
+    ] as never)
+
+    const token = makeAdminToken()
+    const res = await request(app)
+      .get('/api/v1/schools/countries')
+      .set('Authorization', `Bearer ${token}`)
+
+    expect(res.status).toBe(200)
+    expect(body<{ countries: unknown[] }>(res).data.countries).toEqual([
+      { country: 'Australia', schools: 4 },
+      { country: 'Canada', schools: 4 },
+      { country: 'Ireland', schools: 2 },
+    ])
+  })
+
+  it('returns 401 if not authenticated', async () => {
+    const res = await request(app).get('/api/v1/schools/countries')
     expect(res.status).toBe(401)
   })
 })

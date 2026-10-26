@@ -37,6 +37,20 @@ export class SchoolsController {
     }
   }
 
+  // ── GET /schools/countries ────────────────────────────────────────────────
+  static ListCountries = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await SchoolsService.ListCountries()
+      res.status(200).json(
+        successResponse(true, 'School countries retrieved successfully', result, {
+          requestId: req.id,
+        }),
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
   // ── GET /schools/:schoolId ────────────────────────────────────────────────
   static GetSchool = async (req: Request, res: Response, next: NextFunction) => {
     try {
